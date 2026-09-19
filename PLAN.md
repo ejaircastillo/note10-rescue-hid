@@ -81,5 +81,13 @@ teclas). Botón "ENVIAR PIN UNA VEZ" → una secuencia, luego bloqueo de 10 s.
 
 ## Build
 
-Gradle 8.10.2 + AGP 8.8.2 + Kotlin 2.1.20, compileSdk 34 (SDK local), sin AndroidX
-(sólo framework) → `./gradlew assembleDebug` y `./gradlew test`.
+Gradle 8.10.2 + AGP 8.8.2 + Kotlin 2.1.20, compileSdk 34 (SDK local), minSdk 24,
+sin AndroidX (sólo framework) → `./gradlew assembleDebug` y `./gradlew test`.
+Detalle del entorno de build y de lo verificado vs. no verificado en `README.md`.
+
+## Estado
+
+Implementado y compilado (`BUILD SUCCESSFUL`, 33 unit tests en verde, APK sin
+permisos declarados). La verificación end-to-end con los dos teléfonos físicos
+queda pendiente y está listada en la sección "Estado de verificación y
+limitaciones" del `README.md`.
