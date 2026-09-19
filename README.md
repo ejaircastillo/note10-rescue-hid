@@ -93,6 +93,42 @@ Otras limitaciones conocidas:
   dejó fuera a propósito.
 - No hay release firmado (ni keystore): el APK es `debug`.
 
+## Interfaz (pantalla única)
+
+```
+NOTE10 RESCUE HID
+
+USB
+[ Detectar dispositivos ]        <- enumera y lista en radio buttons
+( ) Samsung ... VID 0x04E8 PID 0x...   <- se elige el Note10 acá
+Dispositivo / VID / PID          <- datos del elegido
+AOA protocol: 2                  <- versión informada por el Note10
+[x] Intentar HID igualmente si GET_PROTOCOL falla   <- fallback de un intento
+[ Preparar HID (registrar teclado) ]
+● HID preparado                  <- estado
+
+PIN NUMÉRICO
+[ •••••••• ]                     <- numberPassword, se limpia al enviar
+[ ENVIAR PIN UNA VEZ ]           <- se bloquea 10 s y muestra "Bloqueado N s…"
+
+[ Mostrar controles manuales ]   <- despliega el panel
+   [ Enviar TAB ] [ Enviar BACKSPACE ] [ Enviar ENTER ] [ Desregistrar HID ]
+
+REGISTRO TÉCNICO                 <- nunca muestra el PIN
+[ Limpiar registro ]
+00:00:00  USB device detected: 1
+00:00:00  USB permission granted
+00:00:00  Connection opened
+00:00:00  AOA protocol: 2
+00:00:00  REGISTER_HID: OK
+00:00:00  SET_HID_REPORT_DESC: OK
+00:00:00  HID READY
+00:00:00  6 dígitos enviados
+```
+
+Estados posibles: `● HID no preparado`, `● Trabajando…`, `● HID preparado`,
+`● HID desregistrado`, `● Desconectado`, `● Error <CÓDIGO>`.
+
 ## Errores
 
 | Código | Significado / qué hacer |
@@ -117,6 +153,8 @@ Otras limitaciones conocidas:
 - Descriptor HID de teclado de 63 bytes portado de scrcpy (`hid_keyboard.c`);
   reports de 8 bytes `[modifiers][reserved][6 keycodes]`.
 - Cada tecla: KEY DOWN → espera corta (30 ms) → KEY RELEASE, con 80 ms entre eventos.
+- Cada control transfer se registra con **request, result y duración** (nunca el
+  buffer), así que el registro técnico no permite reconstruir el PIN.
 - No hace brute force: una tecla por dígito escrito a mano, ENTER una sola vez,
   sin reintentos automáticos.
 

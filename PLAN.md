@@ -63,7 +63,9 @@ strings de fabricante/modelo para accessory mode.
 - `MainActivity` — UI única, orquesta; los control transfers corren en un executor
   de un solo hilo (nunca en el hilo de UI).
 - `UsbDeviceManager` — enumeración, permiso (`requestPermission` + `PendingIntent` +
-  `BroadcastReceiver`), attach/detach, `openDevice`.
+  `BroadcastReceiver`), attach/detach, `openDevice`. Registro dinámico de receivers
+  (mientras la Activity está visible): en API 33+ `ATTACHED`/`DETACHED` necesitan
+  `RECEIVER_EXPORTED` y el broadcast propio de permiso `RECEIVER_NOT_EXPORTED`.
 - `UsbControlTransport` — única clase que toca `UsbDeviceConnection.controlTransfer()`
   y la que mide duración de cada transfer.
 - `AoaHidKeyboard` — lógica AOA HID pura, **sin imports de Android**, con
