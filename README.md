@@ -64,14 +64,16 @@ manuales" y nunca se usan solos.
 
 Verificado en este repositorio (salida de herramientas, no estimaciones):
 
-- `./gradlew clean assembleDebug testDebugUnitTest` → **BUILD SUCCESSFUL**.
-- **33 unit tests, 0 fallas**: `AoaHidKeyboardTest` 18, `HidKeyboardReportsTest` 8,
-  `HidKeycodesTest` 7.
+- `./gradlew clean test assembleDebug` → **BUILD SUCCESSFUL**.
+- **45 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
+  `AoaHidKeyboardTest` 28, `HidKeyboardReportsTest` 10, `HidKeycodesTest` 7.
+- Descriptor HID comparado byte a byte contra `scrcpy/app/src/hid/hid_keyboard.c`
+  con las macros resueltas: **63 bytes, 0 diferencias**.
 - APK inspeccionado con `aapt2 dump badging` / `dump permissions`: paquete
-  `com.ejair.note10rescue`, `minSdk 24`, `targetSdk 34`, `uses-feature usb.host`,
-  **cero permisos declarados** (sin `INTERNET`).
-- `sha256` del APK publicado:
-  `66b5511923f08d9e0485128aebb6ac39c084140bb792e9be416060fdb35637f1`.
+  `com.ejair.note10rescue`, `versionCode 2`, `versionName 1.0.1`, `minSdk 24`,
+  `targetSdk 34`, `uses-feature usb.host`, **cero permisos declarados** (sin `INTERNET`).
+- `sha256` del APK publicado (v1.0.1):
+  `3f5ca6758ab383b166a7bdb5a75faeb81b4d8d6626f1390a2a58ab47b9670476`.
 
 **No verificado** (requiere los dos teléfonos físicos, que no están disponibles
 para quien escribió este código):
@@ -103,9 +105,9 @@ USB
 ( ) Samsung ... VID 0x04E8 PID 0x...   <- se elige el Note10 acá
 Dispositivo / VID / PID          <- datos del elegido
 AOA protocol: 2                  <- versión informada por el Note10
-[x] Intentar HID igualmente si GET_PROTOCOL falla   <- fallback de un intento
+[x] Intentar HID igualmente si GET_PROTOCOL falla o responde < 2 (un solo intento)
 [ Preparar HID (registrar teclado) ]
-● HID preparado                  <- estado
+● HID preparado                  <- estado ("(modo forzado)" si se usó el fallback)
 
 PIN NUMÉRICO
 [ •••••••• ]                     <- numberPassword, se limpia al enviar
@@ -127,7 +129,29 @@ REGISTRO TÉCNICO                 <- nunca muestra el PIN
 ```
 
 Estados posibles: `● HID no preparado`, `● Trabajando…`, `● HID preparado`,
-`● HID desregistrado`, `● Desconectado`, `● Error <CÓDIGO>`.
+`● HID preparado (modo forzado)`, `● HID desregistrado`, `● Desconectado`,
+`● Error <CÓDIGO>`.
+
+## Fallback manual ("Intentar HID igualmente")
+
+| Situación | Checkbox **desmarcado** | Checkbox **marcado** |
+|---|---|---|
+| GET_PROTOCOL responde >= 2 | HID normal | HID normal (igual) |
+| GET_PROTOCOL responde < 2 | `AOA_PROTOCOL_UNSUPPORTED`, no registra nada | registra el HID igual → `● HID preparado (modo forzado)` |
+| GET_PROTOCOL falla o responde incompleto | `AOA_PROTOCOL_QUERY_FAILED`, no registra nada | registra el HID igual → `● HID preparado (modo forzado)` |
+
+El fallback es **un único intento**: no hay loops, ni reintentos automáticos, ni
+"volver a probar solo". Requiere que la casilla la marques vos.
+
+Marcarla **no** significa que el dispositivo soporte AOA2. Significa exactamente esto:
+"mandamos los comandos HID directamente aunque la consulta inicial de protocolo no
+haya sido concluyente". No hay garantía de que un Samsung (ni ningún equipo) acepte
+ese camino: si no lo acepta, el síntoma es `REGISTER_HID_FAILED` o
+`SET_DESCRIPTOR_FAILED`, no un `HID preparado`.
+
+En modo forzado la UI muestra `AOA protocol: no disponible / forzado` y
+`● HID preparado (modo forzado)` — nunca `AOA protocol: -1`, porque no hay ninguna
+versión real que informar.
 
 ## Errores
 
@@ -136,8 +160,8 @@ Estados posibles: `● HID no preparado`, `● Trabajando…`, `● HID preparad
 | `NO_USB_DEVICE` | No hay ningún dispositivo USB conectado: revisá el cable y que el Note10 esté encendido. |
 | `USB_PERMISSION_DENIED` | Rechazaste el diálogo de permiso: tocá de nuevo Preparar HID y aceptá. |
 | `OPEN_DEVICE_FAILED` | El host no pudo abrir la conexión (`openDevice()` = null). Cerrá otras apps que estén usando el USB (MTP/Smart Switch) y reintentá. |
-| `AOA_PROTOCOL_QUERY_FAILED` | El control transfer 51 (GET_PROTOCOL) falló: el Note10 no respondió como accesorio. Probá desenchufar/reconectar; en Samsung podés usar el checkbox de fallback para un único intento forzado. |
-| `AOA_PROTOCOL_UNSUPPORTED` | El Note10 respondió protocolo < 2 (AOA1): AOA2 HID no está soportado. Usá el checkbox "Intentar HID igualmente" para un único intento (algunos Samsung responden raro). |
+| `AOA_PROTOCOL_QUERY_FAILED` | El control transfer 51 (GET_PROTOCOL) falló: el dispositivo no respondió como accesorio AOA. Sin el checkbox marcado el flujo se detiene acá; con "Intentar HID igualmente" marcado, la app **sí** intenta el HID (modo forzado, un solo intento). Ver "Fallback manual". |
+| `AOA_PROTOCOL_UNSUPPORTED` | El dispositivo respondió protocolo < 2 (AOA1): no declara AOA2. Sin el checkbox, se detiene; con "Intentar HID igualmente" marcado, intenta el HID igual (un solo intento). |
 | `REGISTER_HID_FAILED` | Falló `ACCESSORY_REGISTER_HID` (54). Probá de nuevo o usá el fallback. |
 | `SET_DESCRIPTOR_FAILED` | Falló `SET_HID_REPORT_DESC` (56): el descriptor no se aceptó. |
 | `SEND_REPORT_FAILED` | Falló `ACCESSORY_SEND_HID_EVENT` (57) al mandar una tecla. |
@@ -155,6 +179,10 @@ Estados posibles: `● HID no preparado`, `● Trabajando…`, `● HID preparad
 - Cada tecla: KEY DOWN → espera corta (30 ms) → KEY RELEASE, con 80 ms entre eventos.
 - Cada control transfer se registra con **request, result y duración** (nunca el
   buffer), así que el registro técnico no permite reconstruir el PIN.
+- Si `SET_HID_REPORT_DESC` falla, se ejecuta `UNREGISTER_HID` automáticamente
+  (misma semántica que `sc_aoa_setup_hid()` de scrcpy) y el estado interno vuelve
+  a "no registrado", aunque el cleanup también falle. El error que se muestra
+  sigue siendo `SET_DESCRIPTOR_FAILED`, no el del cleanup.
 - No hace brute force: una tecla por dígito escrito a mano, ENTER una sola vez,
   sin reintentos automáticos.
 
@@ -190,17 +218,21 @@ app/src/test/java/com/ejair/note10rescue/
 
 ## APK
 
-`dist/note10-rescue-hid-1.0-debug.apk` — APK debug compilado y verificado
-(`BUILD SUCCESSFUL`, 33 unit tests en verde, sin ningún permiso declarado).
+`dist/note10-rescue-hid-1.0.1-debug.apk` — APK debug de v1.0.1, compilado y verificado
+(`BUILD SUCCESSFUL`, 45 unit tests en verde, descriptor idéntico a scrcpy, sin ningún
+permiso declarado). 866.003 bytes.
 
 ```
-sha256  66b5511923f08d9e0485128aebb6ac39c084140bb792e9be416060fdb35637f1
+sha256  3f5ca6758ab383b166a7bdb5a75faeb81b4d8d6626f1390a2a58ab47b9670476
 ```
+
+El APK de v1.0.0 (`dist/note10-rescue-hid-1.0-debug.apk`) queda publicado sin cambios
+para trazabilidad.
 
 Instalación desde una PC con ADB:
 
 ```bash
-adb install -r dist/note10-rescue-hid-1.0-debug.apk
+adb install -r dist/note10-rescue-hid-1.0.1-debug.apk
 ```
 
 ## Build
@@ -219,6 +251,27 @@ Requisitos en la sección [Requisitos](#requisitos) (JDK 17, `platforms;android-
 Los resultados de los tests quedan en `app/build/test-results/testDebugUnitTest/`
 (un XML por clase) y el reporte HTML en
 `app/build/reports/tests/testDebugUnitTest/index.html`.
+
+## Cambios
+
+### v1.0.1
+
+- Descriptor HID corregido para coincidir con scrcpy: `Usage Maximum` y
+  `Logical Maximum` = `0x65` (`SC_HID_KEYBOARD_KEYS - 1`), no `0x66`.
+- El checkbox "Intentar HID igualmente" ahora también funciona cuando
+  `ACCESSORY_GET_PROTOCOL` **falla** (antes sólo actuaba con protocolo < 2).
+- Si `SET_HID_REPORT_DESC` falla, se desregistra el HID automáticamente
+  (semántica de `sc_aoa_setup_hid()` de scrcpy) y el estado interno queda en
+  "no registrado" pase lo que pase con el cleanup.
+- El modo forzado se muestra como `AOA protocol: no disponible / forzado` y
+  `● HID preparado (modo forzado)`; nunca un `-1` como si fuera una versión.
+- 12 tests nuevos de regresión (modo forzado, cleanup, descriptor byte a byte).
+- Sin permisos nuevos, sin red, sin brute force, sin cambios de arquitectura.
+
+### v1.0.0
+
+- Versión inicial: AOA2 HID sobre `UsbDeviceConnection.controlTransfer()`,
+  descriptor de 8 bytes por report, PIN manual + ENTER, cooldown de 10 s.
 
 ## Licencia
 

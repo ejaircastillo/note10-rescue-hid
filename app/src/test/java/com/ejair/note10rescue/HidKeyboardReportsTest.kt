@@ -6,8 +6,31 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Reports HID de 8 bytes: [modifiers][reserved][6 keycodes]. */
+/**
+ * Reports HID de 8 bytes: [modifiers][reserved][6 keycodes]
+ * y descriptor de reporte igual al de scrcpy.
+ */
 class HidKeyboardReportsTest {
+
+    /**
+     * Descriptor esperado, independiente de la implementación: es el de scrcpy
+     * (`app/src/hid/hid_keyboard.c`) con las macros resueltas tal como las
+     * resuelve el compilador:
+     *   SC_HID_KEYBOARD_KEYS     = 0x66   -> Usage/Logical Maximum = 0x66 - 1 = 0x65
+     *   SC_HID_KEYBOARD_MAX_KEYS = 6      -> Report Count de teclas
+     * Sirve para que el descriptor no pueda volver a desviarse sin que falle un test.
+     */
+    private val EXPECTED_DESCRIPTOR = intArrayOf(
+        0x05, 0x01, 0x09, 0x06, 0xA1, 0x01,
+        0x05, 0x07, 0x19, 0xE0, 0x29, 0xE7,
+        0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02,
+        0x75, 0x08, 0x95, 0x01, 0x81, 0x01,
+        0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x75, 0x01, 0x95, 0x05, 0x91, 0x02,
+        0x75, 0x03, 0x95, 0x01, 0x91, 0x01,
+        0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x15, 0x00, 0x25, 0x65,
+        0x75, 0x08, 0x95, 0x06, 0x81, 0x00,
+        0xC0
+    )
 
     @Test
     fun `key down coloca el keycode en el primer slot`() {
@@ -73,29 +96,40 @@ class HidKeyboardReportsTest {
         assertFalse(text.contains("30")) // 0x1E en decimal
     }
 
+    // ---------------------------------------------------------- descriptor
+
     @Test
-    fun `el descriptor de teclado tiene 63 bytes y los valores de scrcpy`() {
+    fun `el descriptor coincide byte por byte con scrcpy`() {
         val descriptor = HidKeyboardDescriptor.REPORT_DESCRIPTOR
 
+        assertEquals(63, EXPECTED_DESCRIPTOR.size)
         assertEquals(63, descriptor.size)
         assertEquals(HidKeyboardDescriptor.SIZE, descriptor.size)
-        // Usage Page (Generic Desktop), Usage (Keyboard), Collection (Application)
-        assertEquals(0x05, descriptor[0].toInt() and 0xFF)
-        assertEquals(0x01, descriptor[1].toInt() and 0xFF)
-        assertEquals(0x09, descriptor[2].toInt() and 0xFF)
-        assertEquals(0x06, descriptor[3].toInt() and 0xFF)
-        assertEquals(0xA1, descriptor[4].toInt() and 0xFF)
-        // Usage Minimum / Maximum de los modificadores (224 / 231)
-        assertEquals(0xE0, descriptor[9].toInt() and 0xFF)
-        assertEquals(0xE7, descriptor[11].toInt() and 0xFF)
-        // Usage Maximum (101) == SC_HID_KEYBOARD_KEYS - 1
-        assertEquals(0x66, descriptor[51].toInt() and 0xFF)
-        // Logical Maximum (101) == SC_HID_KEYBOARD_KEYS
-        assertEquals(0x66, descriptor[55].toInt() and 0xFF)
-        // Report Count (6 keycodes)
-        assertEquals(0x95, descriptor[58].toInt() and 0xFF)
-        assertEquals(6, descriptor[59].toInt() and 0xFF)
-        // End Collection
-        assertEquals(0xC0, descriptor[62].toInt() and 0xFF)
+        assertArrayEquals(
+            "El descriptor debe ser idéntico al de scrcpy hid_keyboard.c",
+            ByteArray(EXPECTED_DESCRIPTOR.size) { EXPECTED_DESCRIPTOR[it].toByte() },
+            descriptor
+        )
+    }
+
+    @Test
+    fun `los maximos de la lista de teclas son 0x65 y no 0x66`() {
+        val descriptor = HidKeyboardDescriptor.REPORT_DESCRIPTOR
+
+        // SC_HID_KEYBOARD_KEYS = 0x66, y scrcpy usa SC_HID_KEYBOARD_KEYS - 1 en
+        // LAS DOS: Usage Maximum y Logical Maximum. El bug de v1.0.0 fue poner 0x66.
+        assertEquals(0x29, descriptor[50].toInt() and 0xFF)  // Usage Maximum (prefijo)
+        assertEquals(0x65, descriptor[51].toInt() and 0xFF)  // 101 == 0x66 - 1
+        assertEquals(0x25, descriptor[54].toInt() and 0xFF)  // Logical Maximum (prefijo)
+        assertEquals(0x65, descriptor[55].toInt() and 0xFF)  // 101 == 0x66 - 1
+    }
+
+    @Test
+    fun `el report count de teclas es 6`() {
+        val descriptor = HidKeyboardDescriptor.REPORT_DESCRIPTOR
+
+        assertEquals(0x95, descriptor[58].toInt() and 0xFF)  // Report Count (prefijo)
+        assertEquals(6, descriptor[59].toInt() and 0xFF)     // SC_HID_KEYBOARD_MAX_KEYS
+        assertEquals(0xC0, descriptor[62].toInt() and 0xFF)  // End Collection
     }
 }

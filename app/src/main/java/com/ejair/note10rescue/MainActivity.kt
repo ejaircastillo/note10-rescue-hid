@@ -269,8 +269,14 @@ class MainActivity : Activity() {
                 val version = aoa.prepare(forceIfUnsupported = force)
                 keyboard = aoa
                 main.post {
-                    tvProtocol.text = getString(R.string.aoa_protocol_fmt, version)
-                    setStatus(getString(R.string.status_ready))
+                    if (version == AoaHidKeyboard.PROTOCOL_UNKNOWN) {
+                        // GET_PROTOCOL no respondió: no mostrar "-1" como versión.
+                        tvProtocol.text = getString(R.string.aoa_protocol_forced)
+                        setStatus(getString(R.string.status_ready_forced))
+                    } else {
+                        tvProtocol.text = getString(R.string.aoa_protocol_fmt, version)
+                        setStatus(getString(R.string.status_ready))
+                    }
                     setKeyboardControlsEnabled(true)
                     btnPrepare.isEnabled = true
                 }

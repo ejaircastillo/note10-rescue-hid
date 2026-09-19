@@ -31,6 +31,14 @@ class AoaHidKeyboard(
         /** Tiempo entre eventos HID consecutivos (~60-100 ms recomendado). */
         const val DEFAULT_EVENT_INTERVAL_MS = 80L
 
+        /**
+         * Resultado de `prepare()` cuando ACCESSORY_GET_PROTOCOL falló y el
+         * usuario había pedido explícitamente el intento HID forzado. No es una
+         * versión de protocolo real: la UI debe mostrarlo como
+         * "no disponible / forzado", nunca como `-1`.
+         */
+        const val PROTOCOL_UNKNOWN = -1
+
         private const val MAX_RECORDED_TRANSFERS = 64
     }
 
@@ -79,6 +87,8 @@ class AoaHidKeyboard(
      */
     @Synchronized
     fun registerHid() {
+        // Invariante: antes de REGISTER_HID el teclado no está registrado.
+        registered = false
         val result = transport.transferOut(
             AoaProtocol.ACCESSORY_REGISTER_HID, hidId, reportDescriptor.size, null, timeoutMs
         )
@@ -110,24 +120,57 @@ class AoaHidKeyboard(
     /**
      * Flujo completo: GET_PROTOCOL -> REGISTER_HID -> SET_HID_REPORT_DESC.
      *
-     * @param forceIfUnsupported fallback manual del usuario: si GET_PROTOCOL
-     *   devuelve < 2, igual intenta registrar el HID. Es un único intento, no hay
-     *   loop ni reintento automático.
-     * @return la versión de protocolo informada por el dispositivo.
+     * @param forceIfUnsupported intento HID forzado, sólo si el usuario lo pidió
+     *   explícitamente. Cubre los **dos** casos en que la consulta de protocolo
+     *   no habilita el camino normal:
+     *   - GET_PROTOCOL responde < 2 (se lanzaría `AOA_PROTOCOL_UNSUPPORTED`),
+     *   - GET_PROTOCOL falla (se lanzaría `AOA_PROTOCOL_QUERY_FAILED`).
+     *   En ambos se intenta registrar el HID **una única vez**: no hay loops ni
+     *   reintentos automáticos.
+     * @return la versión de protocolo informada por el dispositivo, o
+     *   [PROTOCOL_UNKNOWN] si GET_PROTOCOL falló y el intento fue forzado.
      */
     @Synchronized
     fun prepare(forceIfUnsupported: Boolean = false): Int {
-        val version = getProtocolVersion()
-        if (version < 2 && !forceIfUnsupported) {
-            throw AoaException(AoaError.AOA_PROTOCOL_UNSUPPORTED, "protocol=$version")
+        val version = queryProtocolVersionOrUnknown(forceIfUnsupported)
+
+        if (version != PROTOCOL_UNKNOWN && version < 2) {
+            if (!forceIfUnsupported) {
+                throw AoaException(AoaError.AOA_PROTOCOL_UNSUPPORTED, "protocol=$version")
+            }
+            log("AOA protocol < 2: forced HID attempt requested")
         }
-        if (version < 2) {
-            log("AOA protocol < 2: intento HID forzado por el usuario")
-        }
+
         registerHid()
-        setReportDescriptor()
+        try {
+            setReportDescriptor()
+        } catch (e: AoaException) {
+            // Igual que scrcpy (sc_aoa_setup_hid en aoa_hid.c): si el descriptor
+            // falla, se desregistra el HID para no dejar el hidId tomado en el
+            // dispositivo. El error del cleanup no debe ocultar el error original.
+            runCatching { unregisterHid() }
+            throw e
+        }
         log("HID READY")
         return version
+    }
+
+    /**
+     * ACCESSORY_GET_PROTOCOL sin abortar el flujo cuando el usuario ya pidió el
+     * intento forzado: en ese caso devuelve [PROTOCOL_UNKNOWN] en lugar de
+     * propagar el error. Un GET_PROTOCOL fallido sin autorización explícita (o
+     * cualquier otro error) se propaga tal cual.
+     */
+    private fun queryProtocolVersionOrUnknown(forceIfUnsupported: Boolean): Int {
+        return try {
+            getProtocolVersion()
+        } catch (e: AoaException) {
+            if (!forceIfUnsupported || e.aoaError != AoaError.AOA_PROTOCOL_QUERY_FAILED) {
+                throw e
+            }
+            log("GET_PROTOCOL failed; forced HID attempt requested")
+            PROTOCOL_UNKNOWN
+        }
     }
 
     /** ACCESSORY_UNREGISTER_HID (55): value = hidId, index = 0. */

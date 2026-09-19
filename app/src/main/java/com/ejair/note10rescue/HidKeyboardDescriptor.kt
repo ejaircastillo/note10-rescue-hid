@@ -5,9 +5,11 @@ package com.ejair.note10rescue
  * (`app/src/hid/hid_keyboard.c`, `SC_HID_KEYBOARD_REPORT_DESC`).
  *
  * En scrcpy las dos últimas constantes del descriptor se escriben como
- * `SC_HID_KEYBOARD_KEYS - 1` y `SC_HID_KEYBOARD_KEYS`, con
- * `SC_HID_KEYBOARD_KEYS = 0x66` (102), o sea Usage Maximum / Logical Maximum
- * = 101 y Report Count = 6. Acá van los valores literales.
+ * `SC_HID_KEYBOARD_KEYS - 1` (ambas: Usage Maximum **y** Logical Maximum), con
+ * `SC_HID_KEYBOARD_KEYS = 0x66` definido en `hid_keyboard.h`. O sea
+ * 0x66 - 1 = **0x65** (101) en las dos. Acá van los valores literales ya
+ * resueltos; el comentario de cada uno indica de qué macro sale.
+ * Report Count de teclas = `SC_HID_KEYBOARD_MAX_KEYS` = 6.
  *
  * Formato del report (8 bytes, boot keyboard compatible):
  *   byte 0     : modifiers (bitmap)
@@ -45,11 +47,11 @@ object HidKeyboardDescriptor {
         0x91, 0x01, // Output (Constant) - LED padding
         0x05, 0x07, // Usage Page (Key Codes)
         0x19, 0x00, // Usage Minimum (0)
-        0x29, 0x66, // Usage Maximum (101) == SC_HID_KEYBOARD_KEYS - 1
+        0x29, 0x65, // Usage Maximum (101) == SC_HID_KEYBOARD_KEYS - 1  (0x66 - 1)
         0x15, 0x00, // Logical Minimum (0)
-        0x25, 0x66, // Logical Maximum (101) == SC_HID_KEYBOARD_KEYS
+        0x25, 0x65, // Logical Maximum (101) == SC_HID_KEYBOARD_KEYS - 1  (0x66 - 1)
         0x75, 0x08, // Report Size (8)
-        0x95, 0x06, // Report Count (6)
+        0x95, 0x06, // Report Count (6) == SC_HID_KEYBOARD_MAX_KEYS
         0x81, 0x00, // Input (Data, Array) - keys
         0xC0        // End Collection
     )

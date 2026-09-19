@@ -310,4 +310,185 @@ class AoaHidKeyboardTest {
         assertEquals(AoaProtocol.ACCESSORY_REGISTER_HID, transfers[1].request)
         assertTrue(transfers[1].technicalDetail().startsWith("request=54 result="))
     }
+
+    // ------------------------------------ modo forzado (regresión v1.0.0 -> v1.0.1)
+
+    @Test
+    fun `GET_PROTOCOL fallido sin forzar conserva QUERY_FAILED y no registra nada`() {
+        val transport = FakeTransport()
+        transport.protocolResult = -1
+        transport.protocolResponse = null
+
+        val error = assertThrows(AoaException::class.java) {
+            newKeyboard(transport).prepare(forceIfUnsupported = false)
+        }
+
+        assertEquals(AoaError.AOA_PROTOCOL_QUERY_FAILED, error.aoaError)
+        assertEquals(listOf(AoaProtocol.ACCESSORY_GET_PROTOCOL), transport.requests())
+    }
+
+    @Test
+    fun `GET_PROTOCOL fallido con forzado explicito registra el HID una sola vez`() {
+        val transport = FakeTransport()
+        transport.protocolResult = -1
+        transport.protocolResponse = null
+
+        val keyboard = newKeyboard(transport)
+        val version = keyboard.prepare(forceIfUnsupported = true)
+
+        assertEquals(AoaHidKeyboard.PROTOCOL_UNKNOWN, version)
+        assertEquals(
+            listOf(
+                AoaProtocol.ACCESSORY_GET_PROTOCOL,
+                AoaProtocol.ACCESSORY_REGISTER_HID,
+                AoaProtocol.ACCESSORY_SET_HID_REPORT_DESC
+            ),
+            transport.requests()
+        )
+        // Sin loops ni reintentos: cada comando aparece exactamente una vez.
+        assertEquals(1, transport.requests().count { it == AoaProtocol.ACCESSORY_GET_PROTOCOL })
+        assertEquals(1, transport.requests().count { it == AoaProtocol.ACCESSORY_REGISTER_HID })
+        assertEquals(1, transport.requests().count { it == AoaProtocol.ACCESSORY_SET_HID_REPORT_DESC })
+        assertTrue(keyboard.isRegistered)
+        assertTrue(logs.contains("GET_PROTOCOL failed; forced HID attempt requested"))
+        assertTrue(logs.contains("REGISTER_HID: OK"))
+        assertTrue(logs.contains("SET_HID_REPORT_DESC: OK"))
+        assertTrue(logs.contains("HID READY"))
+
+        val register = transport.outTransfers(AoaProtocol.ACCESSORY_REGISTER_HID).single()
+        assertEquals(AoaProtocol.HID_ID_KEYBOARD, register.value)
+        assertEquals(HidKeyboardDescriptor.SIZE, register.index)
+        val descriptor = transport.outTransfers(AoaProtocol.ACCESSORY_SET_HID_REPORT_DESC).single()
+        assertEquals(0, descriptor.index)
+        assertArrayEquals(HidKeyboardDescriptor.REPORT_DESCRIPTOR, descriptor.data)
+    }
+
+    @Test
+    fun `si GET_PROTOCOL falla no se inventa una version de protocolo`() {
+        val transport = FakeTransport()
+        transport.protocolResult = -1
+        transport.protocolResponse = null
+
+        val keyboard = newKeyboard(transport)
+
+        assertEquals(AoaHidKeyboard.PROTOCOL_UNKNOWN, keyboard.prepare(forceIfUnsupported = true))
+        assertEquals(AoaHidKeyboard.PROTOCOL_UNKNOWN, keyboard.lastProtocolVersion)
+        assertFalse(logs.any { it.contains("AOA protocol: -1") })
+    }
+
+    @Test
+    fun `una respuesta de protocolo truncada tambien entra al modo forzado`() {
+        // Sigue siendo AOA_PROTOCOL_QUERY_FAILED, así que el forzado aplica.
+        val sinForzar = FakeTransport()
+        sinForzar.protocolResult = 1
+        sinForzar.protocolResponse = byteArrayOf(0x02) // 1 byte en vez de 2
+        val sinForzarError = assertThrows(AoaException::class.java) {
+            newKeyboard(sinForzar).prepare(forceIfUnsupported = false)
+        }
+        assertEquals(AoaError.AOA_PROTOCOL_QUERY_FAILED, sinForzarError.aoaError)
+        assertFalse(sinForzar.requests().contains(AoaProtocol.ACCESSORY_REGISTER_HID))
+
+        val forzado = FakeTransport()
+        forzado.protocolResult = 1
+        forzado.protocolResponse = byteArrayOf(0x02)
+        val keyboard = newKeyboard(forzado)
+        assertEquals(AoaHidKeyboard.PROTOCOL_UNKNOWN, keyboard.prepare(forceIfUnsupported = true))
+        assertTrue(forzado.requests().contains(AoaProtocol.ACCESSORY_REGISTER_HID))
+        assertTrue(forzado.requests().contains(AoaProtocol.ACCESSORY_SET_HID_REPORT_DESC))
+        assertTrue(keyboard.isRegistered)
+    }
+
+    // ------------------------------------------------- cleanup del descriptor
+
+    @Test
+    fun `si falla el descriptor se desregistra el HID y registered queda false`() {
+        val transport = FakeTransport()
+        transport.descriptorResult = -1
+
+        val keyboard = newKeyboard(transport)
+        val error = assertThrows(AoaException::class.java) { keyboard.prepare() }
+
+        assertEquals(AoaError.SET_DESCRIPTOR_FAILED, error.aoaError)
+        assertEquals(
+            listOf(
+                AoaProtocol.ACCESSORY_GET_PROTOCOL,
+                AoaProtocol.ACCESSORY_REGISTER_HID,
+                AoaProtocol.ACCESSORY_SET_HID_REPORT_DESC,
+                AoaProtocol.ACCESSORY_UNREGISTER_HID
+            ),
+            transport.requests()
+        )
+        assertFalse(keyboard.isRegistered)
+        val unregister = transport.outTransfers(AoaProtocol.ACCESSORY_UNREGISTER_HID).single()
+        assertEquals(AoaProtocol.HID_ID_KEYBOARD, unregister.value)
+        assertEquals(0, unregister.index)
+    }
+
+    @Test
+    fun `si el cleanup tambien falla el error principal sigue siendo SET_DESCRIPTOR_FAILED`() {
+        val transport = FakeTransport()
+        transport.descriptorResult = -1
+        transport.unregisterResult = -1
+
+        val keyboard = newKeyboard(transport)
+        val error = assertThrows(AoaException::class.java) { keyboard.prepare() }
+
+        assertEquals(AoaError.SET_DESCRIPTOR_FAILED, error.aoaError)
+        assertTrue(transport.requests().contains(AoaProtocol.ACCESSORY_UNREGISTER_HID))
+        assertFalse(keyboard.isRegistered)
+        assertFalse(logs.any { it.contains(AoaError.REGISTER_HID_FAILED.code) })
+    }
+
+    @Test
+    fun `si REGISTER_HID falla no se intenta desregistrar`() {
+        val transport = FakeTransport()
+        transport.registerResult = -1
+
+        val error = assertThrows(AoaException::class.java) { newKeyboard(transport).prepare() }
+
+        assertEquals(AoaError.REGISTER_HID_FAILED, error.aoaError)
+        assertFalse(transport.requests().contains(AoaProtocol.ACCESSORY_UNREGISTER_HID))
+    }
+
+    @Test
+    fun `unregister fallido tambien deja registered en false`() {
+        val transport = FakeTransport()
+        val keyboard = prepared(transport)
+        transport.unregisterResult = -1
+
+        assertFalse(keyboard.unregisterHid())
+        assertFalse(keyboard.isRegistered)
+    }
+
+    @Test
+    fun `tras un fallo de descriptor se puede volver a preparar sin problema`() {
+        val transport = FakeTransport()
+        transport.descriptorResult = -1
+        val keyboard = newKeyboard(transport)
+
+        assertThrows(AoaException::class.java) { keyboard.prepare() }
+        assertFalse(keyboard.isRegistered)
+
+        transport.descriptorResult = HidKeyboardDescriptor.SIZE
+        assertEquals(2, keyboard.prepare())
+
+        assertTrue(keyboard.isRegistered)
+        assertEquals(2, transport.requests().count { it == AoaProtocol.ACCESSORY_REGISTER_HID })
+    }
+
+    @Test
+    fun `el modo forzado no filtra nada sensible al registro tecnico`() {
+        val transport = FakeTransport()
+        transport.protocolResult = -1
+        transport.protocolResponse = null
+
+        val keyboard = newKeyboard(transport)
+        keyboard.prepare(forceIfUnsupported = true)
+        keyboard.sendPinAndEnter("1234")
+
+        assertFalse(logs.any { it.contains("1234") })
+        assertFalse(logs.any { it.contains("1e", ignoreCase = true) })
+        assertFalse(logs.any { it.contains("1f", ignoreCase = true) })
+        assertTrue(logs.contains("4 digit sequence sent"))
+    }
 }

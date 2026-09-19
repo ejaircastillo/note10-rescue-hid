@@ -31,9 +31,13 @@ Referencias revisadas:
   sincronización de mod-lock, ni la cola de eventos con acksync, ni el hilo
   productor/consumidor de scrcpy: no hacen falta para un PIN.
 - `app/src/hid/hid_keyboard.c` → **se porta el descriptor de reporte**
-  (`SC_HID_KEYBOARD_REPORT_DESC`), 63 bytes, con los mismos valores, incluidos
-  `Usage Maximum (101)`/`Logical Maximum (101)` que en scrcpy se escriben como
-  `SC_HID_KEYBOARD_KEYS - 1` y `SC_HID_KEYBOARD_KEYS`, con `SC_HID_KEYBOARD_KEYS = 0x66`.
+  (`SC_HID_KEYBOARD_REPORT_DESC`), 63 bytes, con los mismos valores. Las dos
+  últimas constantes de la lista de teclas se escriben en scrcpy como
+  `SC_HID_KEYBOARD_KEYS - 1` (en las **dos**: Usage Maximum y Logical Maximum) con
+  `SC_HID_KEYBOARD_KEYS = 0x66` definido en `hid_keyboard.h`, o sea **0x65** (101);
+  y `SC_HID_KEYBOARD_MAX_KEYS` = 6 como Report Count. v1.0.0 tenía `0x66` en esas
+  dos posiciones: v1.0.1 las corrige y agrega un test que compara el descriptor
+  completo byte a byte contra el C de scrcpy.
   El descriptor es el estándar boot-keyboard HID: 8 bytes por report
   `[mods][reserved][k0..k5]`, y AOA2 no le agrega nada especial.
 - `app/src/usb/scrcpy_otg.c` → **no se porta** (es el orquestador de la app de
@@ -55,8 +59,25 @@ strings de fabricante/modelo para accessory mode.
 | ACCESSORY_SET_HID_REPORT_DESC | 56 | 0x40 (OUT) | hidId | 0 | descriptor |
 | ACCESSORY_SEND_HID_EVENT | 57 | 0x40 (OUT) | hidId | 0 | report 8 bytes |
 
-`hidId = 1`. Si `protocol < 2` → error `AOA_PROTOCOL_UNSUPPORTED`
-(sin loop automático). El usuario puede forzar una vez con el checkbox de fallback.
+`hidId = 1`. `prepare()` decide así, sin loops ni reintentos automáticos:
+
+| GET_PROTOCOL | checkbox "Intentar HID igualmente" | resultado |
+|---|---|---|
+| responde >= 2 | (cualquiera) | `REGISTER_HID` + `SET_HID_REPORT_DESC` → `HID READY` |
+| responde < 2 | desmarcado | `AOA_PROTOCOL_UNSUPPORTED`, no registra nada |
+| responde < 2 | marcado | registra el HID igual (`PROTOCOL_UNKNOWN` = modo forzado) |
+| falla / incompleto | desmarcado | `AOA_PROTOCOL_QUERY_FAILED`, no registra nada |
+| falla / incompleto | marcado | registra el HID igual (`PROTOCOL_UNKNOWN` = modo forzado) |
+
+El fallback es **un único intento** y exige acción explícita del usuario. No
+implica que el dispositivo soporte AOA2: sólo manda los comandos HID sin una
+consulta de protocolo concluyente.
+
+Si `SET_HID_REPORT_DESC` falla: se ejecuta `UNREGISTER_HID` y se relanza el error
+original (`SET_DESCRIPTOR_FAILED`), igual que `sc_aoa_setup_hid()` en `aoa_hid.c`.
+El fallo del cleanup no reemplaza el error principal y `registered` queda en
+`false` en todos los caminos (register fallido, descriptor fallido, unregister
+fallido).
 
 ## Clases
 
@@ -89,7 +110,8 @@ Detalle del entorno de build y de lo verificado vs. no verificado en `README.md`
 
 ## Estado
 
-Implementado y compilado (`BUILD SUCCESSFUL`, 33 unit tests en verde, APK sin
-permisos declarados). La verificación end-to-end con los dos teléfonos físicos
-queda pendiente y está listada en la sección "Estado de verificación y
-limitaciones" del `README.md`.
+v1.0.1: implementado y compilado (`BUILD SUCCESSFUL`) con 45 unit tests en verde,
+descriptor idéntico a scrcpy (0 diferencias byte a byte) y APK sin permisos
+declarados. La verificación end-to-end con los dos teléfonos físicos queda
+pendiente y está listada en la sección "Estado de verificación y limitaciones"
+del `README.md`.
