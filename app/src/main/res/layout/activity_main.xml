@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="12dp"
+            android:text="@string/subtitle"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="@string/section_usb"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnDetect"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/detect_devices" />
+
+        <RadioGroup
+            android:id="@+id/rgDevices"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/tvDevice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="@string/device_none" />
+
+        <TextView
+            android:id="@+id/tvVid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/vid_none" />
+
+        <TextView
+            android:id="@+id/tvPid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/pid_none" />
+
+        <TextView
+            android:id="@+id/tvProtocol"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/aoa_protocol_idle" />
+
+        <CheckBox
+            android:id="@+id/cbForceHid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/force_hid"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnPrepare"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="@string/prepare_hid" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="@string/status_idle"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="@string/section_pin"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/etPin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/pin_hint"
+            android:importantForAutofill="no"
+            android:inputType="numberPassword"
+            android:maxLength="16"
+            android:saveEnabled="false" />
+
+        <Button
+            android:id="@+id/btnSendPin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="@string/send_pin_once" />
+
+        <Button
+            android:id="@+id/btnToggleManual"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/show_manual_controls" />
+
+        <LinearLayout
+            android:id="@+id/panelManual"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btnTab"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="@string/send_tab" />
+
+            <Button
+                android:id="@+id/btnBackspace"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="@string/send_backspace" />
+
+            <Button
+                android:id="@+id/btnEnter"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="@string/send_enter" />
+
+            <Button
+                android:id="@+id/btnUnregister"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="@string/unregister_hid" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="12dp"
+            android:text="@string/section_log"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnClearLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/clear_log" />
+
+        <TextView
+            android:id="@+id/tvLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:paddingTop="4dp"
+            android:paddingBottom="16dp"
+            android:textSize="11sp" />
+    </LinearLayout>
+</ScrollView>

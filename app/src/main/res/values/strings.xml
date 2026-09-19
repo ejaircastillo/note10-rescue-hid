@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Note10 Rescue HID</string>
+    <string name="subtitle">Teclado USB AOA 2.0 HID (USB Host → Note10)</string>
+
+    <string name="section_usb">USB</string>
+    <string name="detect_devices">Detectar dispositivos</string>
+    <string name="prepare_hid">Preparar HID (registrar teclado)</string>
+    <string name="force_hid">Intentar HID igualmente si GET_PROTOCOL falla (fallback manual, un solo intento)</string>
+
+    <string name="device_none">Dispositivo: (ninguno)</string>
+    <string name="vid_none">VID: —</string>
+    <string name="pid_none">PID: —</string>
+    <string name="aoa_protocol_idle">AOA protocol: —</string>
+    <string name="aoa_protocol_fmt">AOA protocol: %1$d</string>
+
+    <string name="status_idle">● HID no preparado</string>
+    <string name="status_working">● Trabajando…</string>
+    <string name="status_ready">● HID preparado</string>
+    <string name="status_unregistered">● HID desregistrado</string>
+    <string name="status_disconnected">● Desconectado</string>
+    <string name="status_error">● Error</string>
+
+    <string name="section_pin">PIN NUMÉRICO</string>
+    <string name="pin_hint">PIN (sólo dígitos)</string>
+    <string name="send_pin_once">ENVIAR PIN UNA VEZ</string>
+    <string name="wait_seconds">Bloqueado %1$d s…</string>
+
+    <string name="show_manual_controls">Mostrar controles manuales</string>
+    <string name="hide_manual_controls">Ocultar controles manuales</string>
+    <string name="send_tab">Enviar TAB</string>
+    <string name="send_backspace">Enviar BACKSPACE</string>
+    <string name="send_enter">Enviar ENTER</string>
+    <string name="unregister_hid">Desregistrar HID</string>
+
+    <string name="section_log">REGISTRO TÉCNICO</string>
+    <string name="clear_log">Limpiar registro</string>
+
+    <string name="msg_pin_empty">PIN vacío: escribí al menos un dígito.</string>
+    <string name="msg_pin_digits_only">El PIN sólo puede tener dígitos (0-9).</string>
+    <string name="msg_pin_too_long">PIN demasiado largo.</string>
+    <string name="msg_hid_not_prepared">Prepará el HID antes de enviar teclas.</string>
+</resources>
