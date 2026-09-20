@@ -99,6 +99,7 @@ class MainActivity : Activity() {
     private lateinit var rbVibroNo: RadioButton
     private lateinit var rbVibroUnknown: RadioButton
     private lateinit var btnCheckMtp: Button
+    private lateinit var btnCheckMtpUsb: Button
 
     private val io: ExecutorService = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -168,6 +169,8 @@ class MainActivity : Activity() {
         rbVibroNo = findViewById(R.id.rbVibroNo)
         rbVibroUnknown = findViewById(R.id.rbVibroUnknown)
         btnCheckMtp = findViewById(R.id.btnCheckMtp)
+        btnCheckMtpUsb = findViewById(R.id.btnCheckMtpUsb)
+        btnCheckMtpUsb.setOnClickListener { probeMtpOverUsb() }
         rgVibration.setOnCheckedChangeListener { _, checkedId ->
             if (!suppressObservation) onVibrationChanged(checkedId)
         }
@@ -754,6 +757,57 @@ class MainActivity : Activity() {
         updateUnlockVerdict()
         if (!changed) {
             log(getString(R.string.msg_usb_no_change, USB_WATCH_SECONDS))
+        }
+    }
+
+    /**
+     * Comprueba el desbloqueo **por el mismo cable del HID**, sin PC: sonda MTP
+     * (`GetStorageIDs`). Android sólo expone el almacenamiento con el equipo
+     * desbloqueado, así que la respuesta es decisiva. No manda ninguna tecla, así que
+     * no gasta intentos.
+     */
+    private fun probeMtpOverUsb() {
+        val info = selected
+        if (info == null) {
+            onAoaError(AoaException(AoaError.NO_USB_DEVICE, "ningún dispositivo seleccionado"))
+            return
+        }
+        if (!usb.hasPermission(info.device)) {
+            preparePending = true
+            requestUsbPermission(info)
+            return
+        }
+        log(getString(R.string.mtp_probe_running))
+        io.execute {
+            var channel: UsbMtpChannel? = null
+            var owned: UsbDeviceConnection? = null
+            try {
+                val conn = connection ?: usb.open(info.device).also { owned = it }
+                channel = UsbMtpChannel(info.device, conn)
+                channel.open()
+                when (val result = MtpProbe.probe(channel)) {
+                    is MtpProbe.Result.Unlocked -> main.post {
+                        log(getString(R.string.mtp_probe_unlocked, result.storages))
+                        setMtp(UnlockEvidence.Mtp.SI)
+                    }
+                    is MtpProbe.Result.Locked -> main.post {
+                        log(getString(R.string.mtp_probe_locked, result.detail))
+                        setMtp(UnlockEvidence.Mtp.NO)
+                    }
+                    is MtpProbe.Result.Inconclusive -> main.post {
+                        log(getString(R.string.mtp_probe_inconclusive, result.reason))
+                    }
+                }
+            } catch (e: AoaException) {
+                main.post { log(getString(R.string.mtp_probe_error, "${e.aoaError.code}: ${e.detail}")) }
+            } catch (t: Throwable) {
+                val detail = "${t.javaClass.simpleName}: ${t.message ?: ""}"
+                main.post { log(getString(R.string.mtp_probe_error, detail)) }
+            } finally {
+                runCatching { channel?.close() }
+                // Sólo cerramos la conexión si la abrimos para la sonda: la del HID se usa.
+                runCatching { owned?.close() }
+            }
         }
     }
 

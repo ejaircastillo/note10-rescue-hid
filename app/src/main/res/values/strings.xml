@@ -76,6 +76,12 @@
     <string name="vibro_unknown">Sin dato todavía</string>
     <string name="vibro_hint">Marcá lo que sentís en el Note10 después de cada envío. Si el teléfono tiene la vibración del sistema desactivada, no vas a sentir nada aunque el PIN falle.</string>
     <string name="check_mtp">Comprobar desbloqueo (MTP en una PC)</string>
+    <string name="check_mtp_usb">Comprobar desbloqueo por USB (sonda MTP, sin PC)</string>
+    <string name="mtp_probe_running">Sonda MTP: preguntando al Note10 cuántos almacenamientos expone (no gasta intentos)…</string>
+    <string name="mtp_probe_unlocked">MTP: el Note10 expone %1$d almacenamiento(s) → ESTÁ DESBLOQUEADO</string>
+    <string name="mtp_probe_locked">MTP: el Note10 no expone ningún almacenamiento (%1$s) → SIGUE BLOQUEADO</string>
+    <string name="mtp_probe_inconclusive">MTP: no se pudo concluir (%1$s)</string>
+    <string name="mtp_probe_error">MTP: falló la sonda (%1$s)</string>
     <string name="mtp_title">Comprobar desbloqueo con la PC</string>
     <string name="mtp_guide">1) Desenchufá el Note10 de este teléfono.\n\n2) Conectalo a una PC con el cable USB-C.\n\n3) Fijate si el Explorador de Windows muestra el "Almacenamiento interno" del Note10.\n\nAndroid sólo expone el almacenamiento con el equipo DESBLOQUEADO: si la PC lo ve, está desbloqueado.</string>
     <string name="mtp_yes">Sí, la PC muestra el almacenamiento</string>

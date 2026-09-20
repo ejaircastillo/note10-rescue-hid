@@ -62,6 +62,16 @@ enum class AoaError(val code: String, val description: String) {
         "INTERNAL_ERROR",
         "Fallo inesperado del envío (no es un error del protocolo AOA). El detalle dice " +
             "la excepción: si se repite, reportalo con el registro."
+    ),
+    MTP_INTERFACE_NOT_FOUND(
+        "MTP_INTERFACE_NOT_FOUND",
+        "El target no expone una interfaz MTP (clase 6): está en modo 'sólo cargar'. " +
+            "Poné 'Transferir archivos' en el Note10 (menú 'Usar USB para') y reintentá."
+    ),
+    MTP_CLAIM_FAILED(
+        "MTP_CLAIM_FAILED",
+        "No se pudo reclamar la interfaz MTP del target. Desconectá y reconectá el cable, " +
+            "y probá de nuevo."
     )
 }
 
