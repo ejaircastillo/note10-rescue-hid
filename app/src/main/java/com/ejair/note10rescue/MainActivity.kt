@@ -27,6 +27,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Pantalla única: detectar dispositivo USB -> permiso -> preparar AOA2 HID ->
@@ -42,6 +43,12 @@ class MainActivity : Activity() {
         const val RESEND_COOLDOWN_MS = 10_000L
         const val MAX_PIN_DIGITS = 12
         const val MAX_LOG_CHARS = 40_000
+
+        /**
+         * Si un envío no deja resultado en este tiempo, se avisa en el registro.
+         * Ningún toque puede quedar en silencio: el usuario está gastando intentos.
+         */
+        const val SEND_WATCHDOG_SECONDS = 15
 
         /**
          * Cuántos segundos se monitorea el bus USB después de un envío. La ventana es
@@ -210,7 +217,17 @@ class MainActivity : Activity() {
         btnCopyLog.setOnClickListener { copyLog() }
         btnOk.setOnClickListener { onOkPressed() }
         cbSimulated.setOnCheckedChangeListener { _, checked ->
-            log(getString(if (checked) R.string.sim_mode_on else R.string.sim_mode_off))
+            log(getString(if (checked) R.string.sim_mode_box_on else R.string.sim_mode_box_off))
+            // El transporte se elige al PREPARAR el HID, así que si la casilla cambió el
+            // teclado preparado ya no representa el modo pedido: se descarta para que el
+            // próximo envío lo prepare con el transporte correcto.
+            val prepared = keyboard
+            if (prepared != null && prepared.isRegistered && prepared.simulated != checked) {
+                log(getString(R.string.msg_mode_changed))
+                keyboard = null
+                setKeyboardControlsEnabled(false)
+                setStatus(getString(R.string.status_idle))
+            }
         }
 
         audit = AuditTrail(this)
@@ -421,7 +438,7 @@ class MainActivity : Activity() {
             try {
                 val aoa = if (simulated) {
                     main.post { log(getString(R.string.sim_mode_on)) }
-                    AoaHidKeyboard(SimulatedTransport())
+                    AoaHidKeyboard(SimulatedTransport(), simulated = true)
                 } else {
                     val conn = connection ?: usb.open(info!!.device).also { opened ->
                         connection = opened
@@ -583,12 +600,34 @@ class MainActivity : Activity() {
             return
         }
 
+        // El modo lo define el TRANSPORTE del teclado preparado, no la casilla: la casilla
+        // sólo elige con qué transporte se prepara el HID. Cuando el modo se leía de la
+        // casilla, un "modo de prueba" podía estar escribiendo de verdad en el Note10
+        // (bug real de v1.0.8: el registro decía "no se toca el Note10" y salieron 10
+        // reports al dispositivo, sin contarse como intento).
+        val simulated = aoa.simulated
+        if (simulated != cbSimulated.isChecked) {
+            log(getString(R.string.msg_mode_changed))
+            keyboard = null
+            setKeyboardControlsEnabled(false)
+            setStatus(getString(R.string.status_idle))
+            autoSendPending = true
+            prepareHid()
+            return
+        }
+
         startCooldown()
-        val simulated = cbSimulated.isChecked
         val number = if (simulated) simulatedRuns + 1 else attemptsSent + 1
         val wakeKeyFirst = cbWakeKey.isChecked
         val clearFieldFirst = cbClearField.isChecked
+        log(getString(R.string.msg_send_requested, number, if (simulated) "simulado" else "USB"))
         log(getString(if (simulated) R.string.sim_mode_on else R.string.sim_mode_off))
+        val finished = AtomicBoolean(false)
+        main.postDelayed({
+            if (!finished.get()) {
+                log(getString(R.string.msg_send_no_result, number, SEND_WATCHDOG_SECONDS))
+            }
+        }, SEND_WATCHDOG_SECONDS * 1000L)
         io.execute {
             try {
                 // Exactamente UNA secuencia: dígitos + ENTER (+ TAB opcional antes).
@@ -597,6 +636,7 @@ class MainActivity : Activity() {
                     wakeKeyFirst = wakeKeyFirst,
                     clearFieldFirst = clearFieldFirst
                 )
+                finished.set(true)
                 audit.append(AuditEntry.attempt(number, pinSource, stats, simulated))
                 main.post {
                     if (simulated) simulatedRuns = number else attemptsSent = number
@@ -619,6 +659,7 @@ class MainActivity : Activity() {
                 }
                 watchTargetUsbState()
             } catch (e: AoaException) {
+                finished.set(true)
                 audit.append(AuditEntry.failure(number, e.aoaError, e.detail))
                 main.post {
                     if (e.aoaError == AoaError.SEND_REPORT_FAILED) {
@@ -630,6 +671,14 @@ class MainActivity : Activity() {
                     }
                     onAoaError(e)
                 }
+            } catch (t: Throwable) {
+                // Nada puede fallar en silencio: una excepción que no sea AoaException se
+                // perdía dentro del executor y el envío no dejaba ni una línea en el
+                // registro (el usuario no sabía si se había mandado algo o no).
+                finished.set(true)
+                val detail = "${t.javaClass.simpleName}: ${t.message ?: ""}"
+                audit.append(AuditEntry.failure(number, AoaError.INTERNAL_ERROR, detail))
+                main.post { onAoaError(AoaException(AoaError.INTERNAL_ERROR, detail)) }
             }
         }
     }

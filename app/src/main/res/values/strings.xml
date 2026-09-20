@@ -89,4 +89,9 @@
     <string name="sim_mode">Modo de prueba: recorre todo el flujo sin tocar el Note10 (no gasta intentos)</string>
     <string name="sim_mode_on">MODO DE PRUEBA: transporte simulado — no se abre ni se toca el Note10</string>
     <string name="sim_mode_off">MODO REAL: los envíos van al Note10 y cuentan como intentos de desbloqueo</string>
+    <string name="sim_mode_box_on">Casilla "Modo de prueba" ACTIVADA: el próximo "Preparar HID" usa el transporte simulado (no toca el Note10)</string>
+    <string name="sim_mode_box_off">Casilla "Modo de prueba" DESACTIVADA: el próximo "Preparar HID" usa el USB real (el Note10 recibe las teclas)</string>
+    <string name="msg_mode_changed">Cambió el modo de prueba desde que se preparó el HID: el teclado preparado ya no representa el modo pedido. Lo vuelvo a preparar con el transporte correcto.</string>
+    <string name="msg_send_requested">Envío #%1$d solicitado (transporte=%2$s)</string>
+    <string name="msg_send_no_result">No hubo resultado del envío #%1$d en %2$ds: revisá el registro (nada se manda en silencio)</string>
 </resources>

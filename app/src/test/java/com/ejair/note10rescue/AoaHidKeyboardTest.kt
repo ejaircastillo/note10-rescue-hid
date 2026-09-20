@@ -627,4 +627,28 @@ class AoaHidKeyboardTest {
         assertTrue(logs.any { it.contains("limpiando el campo con ${AoaHidKeyboard.CLEAR_FIELD_BACKSPACES} BACKSPACE") })
         assertTrue(stats.summary().contains("campo limpiado antes"))
     }
+
+    @Test
+    fun `el teclado sabe si su transporte es simulado`() {
+        val real = AoaHidKeyboard(FakeTransport(), slumber = { })
+        val simulated = AoaHidKeyboard(SimulatedTransport(), simulated = true, slumber = { })
+
+        assertFalse(real.simulated)      // por defecto, transporte real
+        assertTrue(simulated.simulated)
+    }
+
+    @Test
+    fun `la secuencia no depende de la casilla sino del transporte`() {
+        // El modo real se decide al preparar el HID: el teclado simulado nunca toca USB,
+        // y sus reports no se confunden con los de un envío real.
+        val transport = FakeTransport()
+        val keyboard = AoaHidKeyboard(transport, simulated = true, slumber = { })
+        keyboard.prepare()
+
+        val stats = keyboard.sendPinAndEnter("12")
+
+        assertEquals(6, stats.reports)
+        assertTrue(keyboard.simulated)
+        assertEquals(6, transport.outTransfers(AoaProtocol.ACCESSORY_SEND_HID_EVENT).size)
+    }
 }

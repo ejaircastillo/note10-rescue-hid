@@ -47,8 +47,8 @@ android {
         applicationId = "com.ejair.note10rescue"
         minSdk = 24
         targetSdk = 34
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 10
+        versionName = "1.0.9"
 
         // PIN ofuscado (o cadena vacía en el build público).
         buildConfigField("String", "EMBEDDED_PIN_OBFUSCATED", "\"${obfuscatePin(embeddedPin)}\"")

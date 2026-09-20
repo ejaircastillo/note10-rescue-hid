@@ -57,6 +57,11 @@ enum class AoaError(val code: String, val description: String) {
     INVALID_PIN(
         "INVALID_PIN",
         "El PIN está vacío o contiene caracteres que no son dígitos."
+    ),
+    INTERNAL_ERROR(
+        "INTERNAL_ERROR",
+        "Fallo inesperado del envío (no es un error del protocolo AOA). El detalle dice " +
+            "la excepción: si se repite, reportalo con el registro."
     )
 }
 

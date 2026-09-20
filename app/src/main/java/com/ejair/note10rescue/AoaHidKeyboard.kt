@@ -16,6 +16,14 @@ package com.ejair.note10rescue
  */
 class AoaHidKeyboard(
     private val transport: ControlTransport,
+    /**
+     * Si el transporte es simulado. Es una propiedad del teclado preparado, no una
+     * casilla de la UI: el modo real se decide al **preparar** el HID, así que el log,
+     * la auditoría y el contador de intentos tienen que leerlo de acá. Cuando esto se
+     * leía de la casilla, un "modo de prueba" podía estar escribiendo de verdad en el
+     * target (bug real: el log decía "no se toca el Note10" y salieron 10 reports).
+     */
+    val simulated: Boolean = false,
     private val hidId: Int = AoaProtocol.HID_ID_KEYBOARD,
     private val reportDescriptor: ByteArray = HidKeyboardDescriptor.REPORT_DESCRIPTOR,
     private val keyHoldMs: Long = DEFAULT_KEY_HOLD_MS,
