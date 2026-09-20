@@ -43,6 +43,22 @@ class UsbMtpChannel(
         private const val READ_CHUNK = 16 * 1024
 
         /**
+         * Todas las interfaces del target, en texto. Sirve para diagnosticar cuando no
+         * hay ninguna MTP: ahí se ve si el teléfono sólo expone carga/ADB.
+         */
+        fun describeAllInterfaces(device: UsbDevice): String =
+            (0 until device.interfaceCount).joinToString(", ") { i ->
+                val iface = device.getInterface(i)
+                "%d(clase %d/%d/%d, %d endpoints)".format(
+                    iface.id,
+                    iface.interfaceClass,
+                    iface.interfaceSubclass,
+                    iface.interfaceProtocol,
+                    iface.endpointCount
+                )
+            }.ifEmpty { "sin interfaces" }
+
+        /**
          * Interfaz MTP del dispositivo. Si no hay ninguna, el target está en modo
          * "sólo cargar" (o no expone MTP) y la sonda no puede concluir nada.
          */
@@ -70,7 +86,7 @@ class UsbMtpChannel(
     private val iface: UsbInterface = findMtpInterface(device)
         ?: throw AoaException(
             AoaError.MTP_INTERFACE_NOT_FOUND,
-            "el target no expone interfaz MTP (clase 6, subclase 1)"
+            "interfaces del target: ${describeAllInterfaces(device)}"
         )
 
     private val bulkOut: UsbEndpoint?

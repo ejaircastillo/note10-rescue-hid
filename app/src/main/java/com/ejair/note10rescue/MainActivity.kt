@@ -198,6 +198,11 @@ class MainActivity : Activity() {
         usb.onPermissionResult = { device, granted -> onPermissionResult(device, granted) }
         usb.onDeviceAttached = { device ->
             log("USB device detected (attach): ${device.deviceName}")
+            // Si es el mismo dispositivo que ya estaba elegido, volvió a enumerarse (cambio
+            // de rol/modo): el permiso USB y el HID preparado ya no valen.
+            if (selected?.deviceName == device.deviceName) {
+                log(getString(R.string.msg_reenumerated_hint))
+            }
             refreshDevices(silent = true)
         }
         usb.onDeviceDetached = { device -> onDeviceDetached(device) }
@@ -402,6 +407,10 @@ class MainActivity : Activity() {
         log("DEVICE_DISCONNECTED: ${device.deviceName}")
         if (selected?.deviceName == device.deviceName) {
             closeConnection(getString(R.string.status_disconnected))
+            // Si se tocó "USB controlado por" (Ajustes de USB), el rol del puerto cambia y
+            // el dispositivo re-enumera: la conexión se cae y hay que rehacer el permiso y
+            // el HID. Decirlo evita que parezca un fallo de la app.
+            log(getString(R.string.msg_role_swap_hint))
         }
         refreshDevices(silent = true)
     }
@@ -788,7 +797,15 @@ class MainActivity : Activity() {
                 ch.open()
                 val topology = ch.describe()
                 main.post { log(topology) }
-                when (val result = MtpProbe.probe(ch)) {
+                var result = MtpProbe.probe(ch)
+                if (result is MtpProbe.Result.Inconclusive) {
+                    // Un cambio de rol USB puede dejar el endpoint recién renegociado: un
+                    // segundo intento (una sola vez) suele alcanzar.
+                    main.post { log(getString(R.string.mtp_probe_retry)) }
+                    Thread.sleep(1000L)
+                    result = MtpProbe.probe(ch)
+                }
+                when (result) {
                     is MtpProbe.Result.Unlocked -> main.post {
                         log(getString(R.string.mtp_probe_unlocked, result.storages))
                         setMtp(UnlockEvidence.Mtp.SI)
