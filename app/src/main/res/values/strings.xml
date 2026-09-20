@@ -86,6 +86,12 @@
     <string name="mtp_probe_retry">Sonda MTP: el primer intento no obtuvo respuesta, reintento en 1 s (un cambio de rol USB puede dejar el endpoint recién renegociado)…</string>
     <string name="msg_role_swap_hint">El Note10 se desconectó: si tocaste "USB controlado por" en Ajustes de USB, eso cambia el rol del puerto y re-enumera el dispositivo (es esperable). Volvé a tocar "Detectar dispositivos", elegí el Note10, aceptá el permiso USB y tocá "Preparar HID".</string>
     <string name="msg_reenumerated_hint">El Note10 volvió a enumerarse: el permiso USB y el HID preparado quedaron invalidados (el permiso es por sesión de conexión). Tocá "Preparar HID" para registrar el teclado de nuevo.</string>
+    <string name="wake_warning_title">Vas a enviar SIN la tecla de despertar</string>
+    <string name="wake_warning_msg">Si la pantalla del Note10 estaba apagada, Android se come el primer evento de teclado: el PIN entra corrido (sin el primer dígito) y el intento se pierde sin dejar error. Marcá "Enviar TAB antes del PIN", o confirmá sólo si ya despertaste la pantalla con el botón lateral.</string>
+    <string name="wake_warning_send">Enviar igual (ya desperté la pantalla)</string>
+    <string name="wake_warning_cancel">Cancelar</string>
+    <string name="wake_warning_cancelled">Envío cancelado. Marcá "Enviar TAB antes del PIN" si no estás seguro de que la pantalla esté despierta.</string>
+    <string name="msg_prefs_restored">Configuración recordada: TAB antes del PIN=%1$s, limpiar campo=%2$s, modo de prueba=%3$s</string>
     <string name="mtp_title">Comprobar desbloqueo con la PC</string>
     <string name="mtp_guide">1) Desenchufá el Note10 de este teléfono.\n\n2) Conectalo a una PC con el cable USB-C.\n\n3) Fijate si el Explorador de Windows muestra el "Almacenamiento interno" del Note10.\n\nAndroid sólo expone el almacenamiento con el equipo DESBLOQUEADO: si la PC lo ve, está desbloqueado.</string>
     <string name="mtp_yes">Sí, la PC muestra el almacenamiento</string>

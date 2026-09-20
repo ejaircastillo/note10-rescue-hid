@@ -122,6 +122,12 @@ class MainActivity : Activity() {
     /** Bitácora de auditoría en el almacenamiento privado de la app (sin permisos). */
     private lateinit var audit: AuditTrail
 
+    /** Recuerda las casillas entre sesiones (sólo booleanos: nunca el PIN). */
+    private lateinit var uiPrefs: UiPrefs
+
+    /** El aviso de "vas a enviar sin la tecla de despertar" se muestra una vez por sesión. */
+    private var wakeWarningShown = false
+
     /** true cuando el botón OK pidió preparar el HID y, al lograrlo, debe enviar. */
     private var autoSendPending = false
 
@@ -162,6 +168,14 @@ class MainActivity : Activity() {
         cbWakeKey = findViewById(R.id.cbWakeKey)
         cbSimulated = findViewById(R.id.cbSimulated)
         cbClearField = findViewById(R.id.cbClearField)
+
+        // Recordar las casillas entre sesiones: un update del APK no debe apagar la
+        // protección de "TAB antes del PIN" (sin ella, con la pantalla apagada, Android se
+        // come el primer dígito y el intento se pierde sin dejar error).
+        uiPrefs = UiPrefs(this)
+        cbWakeKey.isChecked = uiPrefs.wakeKeyFirst
+        cbClearField.isChecked = uiPrefs.clearFieldFirst
+        cbSimulated.isChecked = uiPrefs.simulatedMode
 
         tvUnlockVerdict = findViewById(R.id.tvUnlockVerdict)
         rgVibration = findViewById(R.id.rgVibration)
@@ -223,8 +237,17 @@ class MainActivity : Activity() {
         }
         btnShareLog.setOnClickListener { shareLog() }
         btnCopyLog.setOnClickListener { copyLog() }
+        cbWakeKey.setOnCheckedChangeListener { _, checked ->
+            uiPrefs.wakeKeyFirst = checked
+            log("TAB antes del PIN: ${if (checked) "activado" else "desactivado"} (queda recordado entre sesiones)")
+        }
+        cbClearField.setOnCheckedChangeListener { _, checked ->
+            uiPrefs.clearFieldFirst = checked
+            log("Limpiar el campo antes del PIN: ${if (checked) "activado" else "desactivado"} (queda recordado)")
+        }
         btnOk.setOnClickListener { onOkPressed() }
         cbSimulated.setOnCheckedChangeListener { _, checked ->
+            uiPrefs.simulatedMode = checked
             log(getString(if (checked) R.string.sim_mode_box_on else R.string.sim_mode_box_off))
             // El transporte se elige al PREPARAR el HID, así que si la casilla cambió el
             // teclado preparado ya no representa el modo pedido: se descarta para que el
@@ -625,6 +648,21 @@ class MainActivity : Activity() {
             setStatus(getString(R.string.status_idle))
             autoSendPending = true
             prepareHid()
+            return
+        }
+
+        // Aviso (una sola vez por sesión): enviar sin la tecla de despertar puede perder el
+        // intento si la pantalla estaba apagada. Ya pasó dos veces en las pruebas de campo.
+        if (!simulated && !cbWakeKey.isChecked && !wakeWarningShown) {
+            wakeWarningShown = true
+            AlertDialog.Builder(this)
+                .setTitle(R.string.wake_warning_title)
+                .setMessage(R.string.wake_warning_msg)
+                .setPositiveButton(R.string.wake_warning_send) { _, _ -> sendSequence(pin, pinSource) }
+                .setNegativeButton(R.string.wake_warning_cancel) { _, _ ->
+                    log(getString(R.string.wake_warning_cancelled))
+                }
+                .show()
             return
         }
 
