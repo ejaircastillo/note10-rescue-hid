@@ -783,9 +783,12 @@ class MainActivity : Activity() {
             var owned: UsbDeviceConnection? = null
             try {
                 val conn = connection ?: usb.open(info.device).also { owned = it }
-                channel = UsbMtpChannel(info.device, conn)
-                channel.open()
-                when (val result = MtpProbe.probe(channel)) {
+                val ch = UsbMtpChannel(info.device, conn)
+                channel = ch
+                ch.open()
+                val topology = ch.describe()
+                main.post { log(topology) }
+                when (val result = MtpProbe.probe(ch)) {
                     is MtpProbe.Result.Unlocked -> main.post {
                         log(getString(R.string.mtp_probe_unlocked, result.storages))
                         setMtp(UnlockEvidence.Mtp.SI)
@@ -794,8 +797,14 @@ class MainActivity : Activity() {
                         log(getString(R.string.mtp_probe_locked, result.detail))
                         setMtp(UnlockEvidence.Mtp.NO)
                     }
-                    is MtpProbe.Result.Inconclusive -> main.post {
-                        log(getString(R.string.mtp_probe_inconclusive, result.reason))
+                    is MtpProbe.Result.Inconclusive -> {
+                        // El motivo + el detalle técnico del canal: sin esto no se puede
+                        // saber si el target no responde o si el problema es del host.
+                        val why = listOf(result.reason, ch.lastError)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" | ")
+                        main.post { log(getString(R.string.mtp_probe_inconclusive, why)) }
+                        main.post { log(getString(R.string.mtp_probe_hint)) }
                     }
                 }
             } catch (e: AoaException) {

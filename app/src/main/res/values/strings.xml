@@ -82,6 +82,7 @@
     <string name="mtp_probe_locked">MTP: el Note10 no expone ningún almacenamiento (%1$s) → SIGUE BLOQUEADO</string>
     <string name="mtp_probe_inconclusive">MTP: no se pudo concluir (%1$s)</string>
     <string name="mtp_probe_error">MTP: falló la sonda (%1$s)</string>
+    <string name="mtp_probe_hint">Si la sonda falla en el primer envío, puede ser que el Note10 esté bloqueado (Android no atiende MTP bloqueado) o que el endpoint esté trabado: reconectá el cable y reintentá la sonda.</string>
     <string name="mtp_title">Comprobar desbloqueo con la PC</string>
     <string name="mtp_guide">1) Desenchufá el Note10 de este teléfono.\n\n2) Conectalo a una PC con el cable USB-C.\n\n3) Fijate si el Explorador de Windows muestra el "Almacenamiento interno" del Note10.\n\nAndroid sólo expone el almacenamiento con el equipo DESBLOQUEADO: si la PC lo ve, está desbloqueado.</string>
     <string name="mtp_yes">Sí, la PC muestra el almacenamiento</string>

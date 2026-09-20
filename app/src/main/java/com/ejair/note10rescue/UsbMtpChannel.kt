@@ -31,7 +31,13 @@ class UsbMtpChannel(
         /** Protocolo 1 = MTP (el 2 es PTP puro, el que usan las cámaras). */
         const val MTP_PROTOCOL = 1
 
-        const val BULK_TIMEOUT_MS = 2000
+        const val BULK_TIMEOUT_MS = 3000
+
+        /** CLEAR_FEATURE(ENDPOINT_HALT): 0x02 = endpoint, 0x01 = CLEAR_FEATURE, 0x0000 = halt. */
+        private const val REQUEST_TYPE_CLEAR_FEATURE = 0x02
+        private const val REQUEST_CLEAR_FEATURE = 0x01
+        private const val FEATURE_ENDPOINT_HALT = 0x0000
+        private const val CLEAR_HALT_TIMEOUT_MS = 500
 
         /** Tamaño de lectura: alcanza para cualquier contenedor de MTP razonable. */
         private const val READ_CHUNK = 16 * 1024
@@ -71,6 +77,36 @@ class UsbMtpChannel(
     private val bulkIn: UsbEndpoint?
     private var claimed = false
 
+    /** Último error técnico de la sonda: va al registro para saber dónde se trabó. */
+    var lastError: String = ""
+        private set
+
+    val hasBulkOut: Boolean get() = bulkOut != null
+    val hasBulkIn: Boolean get() = bulkIn != null
+
+    /**
+     * Topología que se está usando: interfaz, altsetting y endpoints. Va al registro
+     * antes de la sonda, para poder distinguir "no hay endpoint" de "el target no
+     * responde".
+     */
+    fun describe(): String {
+        val endpoints = (0 until iface.endpointCount).joinToString(", ") { i ->
+            val ep = iface.getEndpoint(i)
+            val direction = if (ep.direction == UsbConstants.USB_DIR_IN) "IN" else "OUT"
+            val kind = if (ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK) "bulk" else "tipo${ep.type}"
+            "0x%02X %s %s %dB".format(ep.address, direction, kind, ep.maxPacketSize)
+        }
+        return "MTP: interfaz %d (altsetting %d, clase %d/%d/%d, %d endpoints) -> %s".format(
+            iface.id,
+            iface.alternateSetting,
+            iface.interfaceClass,
+            iface.interfaceSubclass,
+            iface.interfaceProtocol,
+            iface.endpointCount,
+            endpoints
+        )
+    }
+
     init {
         var out: UsbEndpoint? = null
         var incoming: UsbEndpoint? = null
@@ -96,17 +132,55 @@ class UsbMtpChannel(
     }
 
     override fun send(bytes: ByteArray): Boolean {
-        val endpoint = bulkOut ?: return false
-        val sent = connection.bulkTransfer(endpoint, bytes, bytes.size, bulkTimeoutMs)
-        return sent == bytes.size
+        val endpoint = bulkOut
+        if (endpoint == null) {
+            lastError = "la interfaz MTP no tiene endpoint bulk OUT (${describe()})"
+            return false
+        }
+        val first = connection.bulkTransfer(endpoint, bytes, bytes.size, bulkTimeoutMs)
+        if (first == bytes.size) return true
+        // Un endpoint bulk puede quedar en halt y rechazar todo hasta que se limpia:
+        // CLEAR_FEATURE(ENDPOINT_HALT) y un reintento.
+        clearHalt(endpoint)
+        val second = connection.bulkTransfer(endpoint, bytes, bytes.size, bulkTimeoutMs)
+        lastError = "bulk OUT 0x%02X devolvió %d bytes y tras CLEAR_HALT %d (se esperaban %d)".format(
+            endpoint.address, first, second, bytes.size
+        )
+        return second == bytes.size
     }
 
     override fun receive(timeoutMs: Int): ByteArray? {
-        val endpoint = bulkIn ?: return null
+        val endpoint = bulkIn
+        if (endpoint == null) {
+            lastError = "la interfaz MTP no tiene endpoint bulk IN"
+            return null
+        }
         val buffer = ByteArray(READ_CHUNK)
         val read = connection.bulkTransfer(endpoint, buffer, buffer.size, timeoutMs)
-        if (read <= 0) return null
+        if (read <= 0) {
+            clearHalt(endpoint)
+            lastError = "bulk IN 0x%02X devolvió %d (sin datos del target)".format(endpoint.address, read)
+            return null
+        }
         return buffer.copyOf(read)
+    }
+
+    /**
+     * CLEAR_FEATURE(ENDPOINT_HALT): limpia el halt de un endpoint bulk. Es la causa
+     * típica de un `bulkTransfer` que devuelve -1 sin que el dispositivo esté roto.
+     */
+    private fun clearHalt(endpoint: UsbEndpoint) {
+        runCatching {
+            connection.controlTransfer(
+                REQUEST_TYPE_CLEAR_FEATURE,
+                REQUEST_CLEAR_FEATURE,
+                FEATURE_ENDPOINT_HALT,
+                endpoint.address,
+                null,
+                0,
+                CLEAR_HALT_TIMEOUT_MS
+            )
+        }
     }
 
     /** Suelta la interfaz (el HID sigue funcionando: va por EP0). */
