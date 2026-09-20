@@ -1,26 +1,30 @@
 #!/usr/bin/env bash
-# Compila el APK PRIVADO con el PIN embebido.
+# Compila el APK CON el PIN embebido y lo deja en dist/ con el nombre de la versión.
 #
-# Requiere `pin-local.properties` (no versionado; ver pin-local.properties.example).
-# El APK resultante lleva el PIN ofuscado: NO se publica ni se comparte.
+# El PIN vive en `pin-local.properties`, versionado a propósito: el dueño del
+# dispositivo autorizó publicarlo (ver README). El build público se compila con
+# `-PskipPin=true` y no lleva ningún PIN.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
 if [ ! -f pin-local.properties ]; then
-  echo "ERROR: falta pin-local.properties."
-  echo "       cp pin-local.properties.example pin-local.properties  y poné pin=XXXX"
+  echo "ERROR: falta pin-local.properties (tiene que tener la línea pin=XXXX)."
   exit 1
 fi
 
 export JAVA_HOME="${JAVA_HOME:-C:/Program Files/Java/jdk-17}"
 
+VERSION="$(grep -oE 'versionName = "[^"]+"' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)"/\1/')"
+
 ./gradlew clean test assembleDebug --console=plain
 
-mkdir -p dist-privado
-cp app/build/outputs/apk/debug/app-debug.apk dist-privado/note10-rescue-hid-privado-debug.apk
+mkdir -p dist
+OUT="dist/note10-rescue-hid-${VERSION}-pin-debug.apk"
+cp app/build/outputs/apk/debug/app-debug.apk "$OUT"
 
 echo
-echo "APK privado: dist-privado/note10-rescue-hid-privado-debug.apk"
-sha256sum dist-privado/note10-rescue-hid-privado-debug.apk
-echo "NO publicar ni compartir este APK (lleva el PIN embebido)."
+echo "APK con PIN embebido: $OUT"
+sha256sum "$OUT"
+echo "Ojo: después de correr este script, app/build/.../app-debug.apk lleva el PIN."
+echo "Para volver al APK público: ./gradlew clean assembleDebug -PskipPin=true"

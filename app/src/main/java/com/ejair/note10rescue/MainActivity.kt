@@ -57,6 +57,7 @@ class MainActivity : Activity() {
     private lateinit var tvAttempts: TextView
     private lateinit var cbWakeKey: CheckBox
     private lateinit var cbSimulated: CheckBox
+    private lateinit var cbClearField: CheckBox
     private lateinit var btnOk: Button
     private lateinit var tvOkHint: TextView
     private lateinit var btnShareLog: Button
@@ -125,6 +126,7 @@ class MainActivity : Activity() {
         tvAttempts = findViewById(R.id.tvAttempts)
         cbWakeKey = findViewById(R.id.cbWakeKey)
         cbSimulated = findViewById(R.id.cbSimulated)
+        cbClearField = findViewById(R.id.cbClearField)
         btnOk = findViewById(R.id.btnOk)
         tvOkHint = findViewById(R.id.tvOkHint)
         btnShareLog = findViewById(R.id.btnShareLog)
@@ -509,11 +511,16 @@ class MainActivity : Activity() {
         val simulated = cbSimulated.isChecked
         val number = if (simulated) simulatedRuns + 1 else attemptsSent + 1
         val wakeKeyFirst = cbWakeKey.isChecked
+        val clearFieldFirst = cbClearField.isChecked
         log(getString(if (simulated) R.string.sim_mode_on else R.string.sim_mode_off))
         io.execute {
             try {
                 // Exactamente UNA secuencia: dígitos + ENTER (+ TAB opcional antes).
-                val stats = aoa.sendPinAndEnter(pin, wakeKeyFirst = wakeKeyFirst)
+                val stats = aoa.sendPinAndEnter(
+                    pin,
+                    wakeKeyFirst = wakeKeyFirst,
+                    clearFieldFirst = clearFieldFirst
+                )
                 audit.append(AuditEntry.attempt(number, pinSource, stats, simulated))
                 main.post {
                     if (simulated) simulatedRuns = number else attemptsSent = number
@@ -533,7 +540,16 @@ class MainActivity : Activity() {
                 watchTargetUsbState()
             } catch (e: AoaException) {
                 audit.append(AuditEntry.failure(number, e.aoaError, e.detail))
-                main.post { onAoaError(e) }
+                main.post {
+                    if (e.aoaError == AoaError.SEND_REPORT_FAILED) {
+                        // Una transferencia rechazada no entrega ninguna tecla: este
+                        // envío NO cuenta como intento. Si se cortó a mitad de camino,
+                        // conviene limpiar el campo antes del próximo.
+                        log("Ese envío NO contó como intento (la transferencia fue rechazada, no se escribió nada)")
+                        log("Si el corte fue a mitad de la secuencia, marcá 'Limpiar el campo antes del PIN' y volvé a tocar OK")
+                    }
+                    onAoaError(e)
+                }
             }
         }
     }

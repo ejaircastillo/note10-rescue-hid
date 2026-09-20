@@ -107,6 +107,25 @@ fallido).
   Android con AOA2 (protocolo 2, descriptor aceptado, reports de 8) sin tocar ningún
   dispositivo, para ejercitar el pipeline completo sin gastar intentos de desbloqueo.
 
+## Hallazgo de campo (v1.0.6)
+
+El primer ensayo contra un Note10 real (2026-09-20) confirmó el camino elegido
+(protocolo 2, `REGISTER_HID` OK, descriptor de 63 bytes aceptado, 12 reports con
+`result=8`) y dejó un defecto concreto: **el primer `SEND_HID_EVENT` inmediatamente
+después de `SET_HID_REPORT_DESC` es rechazado con `result=-1`**; el mismo envío, un par
+de minutos después, pasa sin problema. Es una carrera de inicialización del lado
+Android, no un problema del descriptor ni del protocolo.
+
+Correcciones (v1.0.6):
+
+- espera de asentamiento de 1500 ms después del descriptor, antes del primer evento;
+- reintento del **mismo** report hasta 3 veces (1 s entre intentos) si el dispositivo lo
+  rechaza: una transferencia rechazada no entrega teclas, así que no duplica pulsaciones
+  ni consume intentos de desbloqueo (no viola la regla de "sin reintentos automáticos de
+  secuencia", que sigue intacta);
+- casilla manual "limpiar el campo antes del PIN" (12 BACKSPACE), para que un envío
+  cortado a mitad no deje dígitos pegados en el campo del bloqueo.
+
 ## Seguridad del PIN
 
 `numberPassword`, sin SharedPreferences/DB/archivo, `saveEnabled=false`, sin

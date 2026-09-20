@@ -6,19 +6,19 @@ plugins {
 }
 
 /**
- * PIN embebido OPCIONAL para el envío directo (build privado).
+ * PIN embebido para el envío directo.
  *
- * Se lee de `pin-local.properties` en la raíz del proyecto, que está en .gitignore:
- * el PIN nunca entra al repositorio ni al APK público. Si el archivo no existe (o no
- * tiene la clave `pin`), el campo queda vacío, la app funciona igual y el botón de
+ * Se lee de `pin-local.properties` en la raíz del proyecto, que SÍ se versiona: el
+ * dueño del dispositivo autorizó publicar el PIN (ver README). Si el archivo no existe
+ * o no tiene la clave `pin`, el campo queda vacío, la app funciona igual y el botón de
  * envío directo avisa que no hay PIN.
  *
  * Para forzar el build público aunque el archivo exista:
  *     ./gradlew assembleDebug -PskipPin=true
  *
  * Se embebe ofuscado (XOR 0x5A + hex, igual que PinVault.decode) para que no aparezca
- * como texto plano en el .dex. Es ofuscación, no criptografía: el APK privado no se
- * publica ni se comparte.
+ * como texto plano en el .dex. Es ofuscación, no criptografía: con el APK a mano se
+ * puede recuperar el PIN (y ya está publicado en este repositorio a propósito).
  */
 val pinLocalFile = rootProject.file("pin-local.properties")
 val skipPin = (project.findProperty("skipPin") as String?) == "true"
@@ -36,7 +36,7 @@ fun obfuscatePin(pin: String): String =
 if (embeddedPin.isEmpty()) {
     println("pin-local.properties: sin PIN embebido (build público${if (skipPin) ", -PskipPin" else ""})")
 } else {
-    println("pin-local.properties: PIN embebido de ${embeddedPin.length} dígitos -> APK PRIVADO, no publicar")
+    println("pin-local.properties: PIN embebido de ${embeddedPin.length} dígitos -> APK CON PIN (publicado a propósito, ver README)")
 }
 
 android {
@@ -47,8 +47,8 @@ android {
         applicationId = "com.ejair.note10rescue"
         minSdk = 24
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.0.5"
+        versionCode = 7
+        versionName = "1.0.6"
 
         // PIN ofuscado (o cadena vacía en el build público).
         buildConfigField("String", "EMBEDDED_PIN_OBFUSCATED", "\"${obfuscatePin(embeddedPin)}\"")

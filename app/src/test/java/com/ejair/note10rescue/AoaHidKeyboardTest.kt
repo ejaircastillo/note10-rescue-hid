@@ -548,4 +548,83 @@ class AoaHidKeyboardTest {
         assertEquals(4, second.reports)
         assertTrue(second.durationMs >= 0)
     }
+
+    // -------------------------------- asentamiento y reintentos (v1.0.6, caso real)
+
+    @Test
+    fun `despues del descriptor espera a que el dispositivo acepte eventos`() {
+        val transport = FakeTransport()
+        val keyboard = newKeyboard(transport)
+
+        keyboard.prepare()
+
+        val ready = logs.indexOf("HID READY")
+        val waiting = logs.indexOfFirst { it.startsWith("esperando ${AoaHidKeyboard.DEFAULT_SETTLE_MS}ms") }
+        val listo = logs.indexOf("listo para enviar")
+
+        assertTrue(ready >= 0)
+        assertTrue(waiting > ready)
+        assertTrue(listo > waiting)
+    }
+
+    @Test
+    fun `un reporte rechazado se reintenta y la secuencia termina bien`() {
+        val transport = FakeTransport()
+        val keyboard = prepared(transport)
+        // Reproduce el caso medido: el primer evento se rechaza y el siguiente anda.
+        transport.eventFailuresRemaining = 1
+
+        val stats = keyboard.sendPinAndEnter("12")
+
+        assertEquals(2, stats.digits)
+        assertEquals(6, stats.reports)          // los reports entregados son los mismos
+        assertEquals(1, stats.retries)          // y hubo un reintento de transferencia
+        assertTrue(logs.any { it.contains("reintento 1/${AoaHidKeyboard.DEFAULT_REPORT_RETRIES}") })
+        assertTrue(logs.any { it.contains("no entrega ninguna tecla") })
+        val transfers = transport.sentReports()
+        // El transporte vio 7 transferencias: la rechazada + las 6 entregadas.
+        assertEquals(7, transfers.size)
+        assertEquals(0x1E, transfers[0][2].toInt()) // la rechazada era el primer dígito
+        assertEquals(0x1E, transfers[1][2].toInt()) // el reintento mandó exactamente lo mismo
+        // Y la secuencia entregada es la esperada, sin corrimientos:
+        val delivered = transfers.drop(1).map { it[2].toInt() }
+        assertEquals(listOf(0x1E, 0, 0x1F, 0, 0x28, 0), delivered)
+    }
+
+    @Test
+    fun `si el reporte falla siempre se agota en SEND_REPORT_FAILED`() {
+        val transport = FakeTransport()
+        val keyboard = prepared(transport)
+        transport.eventResult = -1
+
+        val error = assertThrows(AoaException::class.java) {
+            keyboard.sendPinAndEnter("1")
+        }
+
+        assertEquals(AoaError.SEND_REPORT_FAILED, error.aoaError)
+        // 1 intento + los reintentos configurados
+        val attempts = transport.outTransfers(AoaProtocol.ACCESSORY_SEND_HID_EVENT).size
+        assertEquals(1 + AoaHidKeyboard.DEFAULT_REPORT_RETRIES, attempts)
+    }
+
+    @Test
+    fun `limpiar el campo manda doce backspace antes del pin`() {
+        val transport = FakeTransport()
+        val keyboard = prepared(transport)
+
+        val stats = keyboard.sendPinAndEnter("12", clearFieldFirst = true)
+
+        assertTrue(stats.clearedField)
+        // 12 BACKSPACE + 2 dígitos + ENTER = 15 pulsaciones = 30 reports
+        assertEquals(30, stats.reports)
+        val reports = transport.sentReports()
+        assertEquals(30, reports.size)
+        assertEquals(HidKeycodes.BACKSPACE, reports[0][2].toInt())
+        assertEquals(HidKeycodes.BACKSPACE, reports[22][2].toInt())
+        assertTrue(reports[1].all { it.toInt() == 0 })
+        assertEquals(0x1E, reports[24][2].toInt())               // recién ahí el '1'
+        assertEquals(HidKeycodes.ENTER, reports[28][2].toInt())
+        assertTrue(logs.any { it.contains("limpiando el campo con ${AoaHidKeyboard.CLEAR_FIELD_BACKSPACES} BACKSPACE") })
+        assertTrue(stats.summary().contains("campo limpiado antes"))
+    }
 }

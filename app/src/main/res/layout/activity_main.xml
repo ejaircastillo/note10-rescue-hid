@@ -136,6 +136,13 @@
             android:textSize="12sp" />
 
         <CheckBox
+            android:id="@+id/cbClearField"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/clear_field_first"
+            android:textSize="12sp" />
+
+        <CheckBox
             android:id="@+id/cbSimulated"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

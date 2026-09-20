@@ -21,6 +21,9 @@ class AoaHidKeyboard(
     private val keyHoldMs: Long = DEFAULT_KEY_HOLD_MS,
     private val eventIntervalMs: Long = DEFAULT_EVENT_INTERVAL_MS,
     private val timeoutMs: Int = AoaProtocol.DEFAULT_TIMEOUT_MS,
+    private val settleMs: Long = DEFAULT_SETTLE_MS,
+    private val maxReportRetries: Int = DEFAULT_REPORT_RETRIES,
+    private val retryDelayMs: Long = DEFAULT_RETRY_DELAY_MS,
     private val slumber: (Long) -> Unit = { ms -> Thread.sleep(ms) }
 ) {
 
@@ -30,6 +33,29 @@ class AoaHidKeyboard(
 
         /** Tiempo entre eventos HID consecutivos (~60-100 ms recomendado). */
         const val DEFAULT_EVENT_INTERVAL_MS = 80L
+
+        /**
+         * Espera después de SET_HID_REPORT_DESC antes de mandar el primer evento.
+         *
+         * Medido en un Note10 real: si el primer SEND_HID_EVENT sale inmediatamente
+         * después del descriptor, el dispositivo lo rechaza (`result=-1`) porque el
+         * lado Android todavía no terminó de crear el dispositivo HID. Unos segundos
+         * después el mismo evento pasa sin problema.
+         */
+        const val DEFAULT_SETTLE_MS = 1500L
+
+        /**
+         * Reintentos de un report **rechazado** (transferencia fallida). Un control
+         * transfer que devuelve -1 no entregó ninguna tecla, así que reintentarlo no
+         * duplica pulsaciones ni cuenta como intento de desbloqueo.
+         */
+        const val DEFAULT_REPORT_RETRIES = 3
+
+        /** Espera entre reintentos de un report rechazado. */
+        const val DEFAULT_RETRY_DELAY_MS = 1000L
+
+        /** BACKSPACEs que manda la opción "limpiar campo" antes del PIN. */
+        const val CLEAR_FIELD_BACKSPACES = 12
 
         /**
          * Resultado de `prepare()` cuando ACCESSORY_GET_PROTOCOL falló y el
@@ -47,11 +73,16 @@ class AoaHidKeyboard(
         val digits: Int,
         val reports: Int,
         val durationMs: Long,
-        val wakeKeyFirst: Boolean
+        val wakeKeyFirst: Boolean,
+        val retries: Int = 0,
+        val clearedField: Boolean = false
     ) {
-        fun summary(): String =
-            "$digits dígitos, $reports reports OK, ${durationMs}ms" +
-                if (wakeKeyFirst) " (con tecla de despertar previa)" else ""
+        fun summary(): String = buildString {
+            append("$digits dígitos, $reports reports OK, ${durationMs}ms")
+            if (wakeKeyFirst) append(" (con tecla de despertar previa)")
+            if (clearedField) append(" (campo limpiado antes)")
+            if (retries > 0) append(" [$retries reintentos de transferencia]")
+        }
     }
 
     /** Callback de registro técnico (nunca incluye contenido sensible). */
@@ -60,6 +91,7 @@ class AoaHidKeyboard(
     private val recorded = mutableListOf<TransferResult>()
     private var registered = false
     private var reportsSent = 0
+    private var reportsRetried = 0
 
     /** Última secuencia enviada (sin dígitos: sólo cantidades y tiempos). */
     var lastSequenceStats: SequenceStats? = null
@@ -169,6 +201,13 @@ class AoaHidKeyboard(
             throw e
         }
         log("HID READY")
+        // El lado Android necesita un instante para aceptar eventos después del
+        // descriptor: sin esta espera el primer report puede ser rechazado (-1).
+        if (settleMs > 0) {
+            log("esperando ${settleMs}ms a que el dispositivo acepte eventos HID")
+            slumber(settleMs)
+            log("listo para enviar")
+        }
         return version
     }
 
@@ -206,21 +245,42 @@ class AoaHidKeyboard(
         return true
     }
 
-    /** ACCESSORY_SEND_HID_EVENT (57): value = hidId, index = 0, data = report. */
+    /**
+     * ACCESSORY_SEND_HID_EVENT (57): value = hidId, index = 0, data = report.
+     *
+     * Si el dispositivo rechaza la transferencia (`result=-1`), reintenta el **mismo**
+     * report hasta [maxReportRetries] veces. Es seguro: una transferencia rechazada no
+     * entregó ninguna tecla, así que no duplica pulsaciones ni consume intentos de
+     * desbloqueo. Si se agotan los reintentos, propaga `SEND_REPORT_FAILED`.
+     */
     @Synchronized
     fun sendReport(report: ByteArray) {
         require(report.size == HidKeyboardReports.REPORT_SIZE) {
             "El report HID debe tener ${HidKeyboardReports.REPORT_SIZE} bytes"
         }
         requireRegistered()
-        val result = transport.transferOut(
-            AoaProtocol.ACCESSORY_SEND_HID_EVENT, hidId, 0, report, timeoutMs
-        )
-        record("SEND_HID_EVENT", result)
-        if (!result.ok) {
-            throw AoaException(AoaError.SEND_REPORT_FAILED, result.technicalDetail())
+        var attempt = 0
+        while (true) {
+            val result = transport.transferOut(
+                AoaProtocol.ACCESSORY_SEND_HID_EVENT, hidId, 0, report, timeoutMs
+            )
+            record("SEND_HID_EVENT", result)
+            if (result.ok) {
+                reportsSent++
+                return
+            }
+            attempt++
+            if (attempt > maxReportRetries) {
+                throw AoaException(AoaError.SEND_REPORT_FAILED, result.technicalDetail())
+            }
+            reportsRetried++
+            log(
+                "SEND_HID_EVENT rechazado (result=${result.bytesTransferred}); " +
+                    "reintento $attempt/$maxReportRetries en ${retryDelayMs}ms " +
+                    "(una transferencia rechazada no entrega ninguna tecla)"
+            )
+            slumber(retryDelayMs)
         }
-        reportsSent++
     }
 
     /** Una pulsación completa: KEY DOWN -> KEY RELEASE -> pausa entre eventos. */
@@ -234,17 +294,23 @@ class AoaHidKeyboard(
 
     /**
      * Envía la secuencia de [pin] (sólo dígitos) seguida de ENTER.
-     * Una sola pasada, sin reintentos.
+     * Una sola pasada, sin reintentos de secuencia.
      *
      * @param wakeKeyFirst opción manual explícita: manda una TAB antes del PIN.
      *   Sirve para el caso en que la pantalla estaba apagada, porque Android suele
      *   consumir el primer evento de teclado para despertarla (y entonces el PIN
-     *   entraría corrido, sin el primer dígito). No es un reintento ni una
-     *   secuencia automática: lo decide el usuario con la casilla.
+     *   entraría corrido, sin el primer dígito).
+     * @param clearFieldFirst opción manual: manda [CLEAR_FIELD_BACKSPACES] BACKSPACE
+     *   antes del PIN, para que un intento anterior cortado a mitad de camino no deje
+     *   dígitos pegados en el campo del bloqueo.
      * @return [SequenceStats] con cantidades y duración (nunca los dígitos).
      */
     @Synchronized
-    fun sendPinAndEnter(pin: CharSequence, wakeKeyFirst: Boolean = false): SequenceStats {
+    fun sendPinAndEnter(
+        pin: CharSequence,
+        wakeKeyFirst: Boolean = false,
+        clearFieldFirst: Boolean = false
+    ): SequenceStats {
         val digits = pin.toString()
         if (digits.isEmpty()) {
             throw AoaException(AoaError.INVALID_PIN, "vacío")
@@ -256,10 +322,15 @@ class AoaHidKeyboard(
 
         val started = System.nanoTime()
         val reportsBefore = reportsSent
+        val retriesBefore = reportsRetried
 
         if (wakeKeyFirst) {
             log("wake key (TAB) sent first")
             pressKey(HidKeycodes.TAB)
+        }
+        if (clearFieldFirst) {
+            log("limpiando el campo con $CLEAR_FIELD_BACKSPACES BACKSPACE antes del PIN")
+            repeat(CLEAR_FIELD_BACKSPACES) { pressKey(HidKeycodes.BACKSPACE) }
         }
         for (digit in digits) {
             pressKey(HidKeycodes.forDigit(digit))
@@ -270,7 +341,9 @@ class AoaHidKeyboard(
             digits = digits.length,
             reports = reportsSent - reportsBefore,
             durationMs = (System.nanoTime() - started) / 1_000_000L,
-            wakeKeyFirst = wakeKeyFirst
+            wakeKeyFirst = wakeKeyFirst,
+            retries = reportsRetried - retriesBefore,
+            clearedField = clearFieldFirst
         )
         lastSequenceStats = stats
         log("${digits.length} digit sequence sent")

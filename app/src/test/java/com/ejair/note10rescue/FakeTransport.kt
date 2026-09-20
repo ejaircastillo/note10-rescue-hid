@@ -27,6 +27,13 @@ class FakeTransport : ControlTransport {
     var eventResult: Int = HidKeyboardReports.REPORT_SIZE
     var unregisterResult: Int = 0
 
+    /**
+     * Cuántos SEND_HID_EVENT van a fallar (result=-1) antes de empezar a responder bien.
+     * Sirve para reproducir el caso real: el primer evento rechazado justo después de
+     * registrar el HID, y el mismo evento aceptado después.
+     */
+    var eventFailuresRemaining: Int = 0
+
     override fun transferOut(
         request: Int,
         value: Int,
@@ -38,7 +45,13 @@ class FakeTransport : ControlTransport {
         val result = when (request) {
             AoaProtocol.ACCESSORY_REGISTER_HID -> registerResult
             AoaProtocol.ACCESSORY_SET_HID_REPORT_DESC -> descriptorResult
-            AoaProtocol.ACCESSORY_SEND_HID_EVENT -> eventResult
+            AoaProtocol.ACCESSORY_SEND_HID_EVENT ->
+                if (eventFailuresRemaining > 0) {
+                    eventFailuresRemaining--
+                    -1
+                } else {
+                    eventResult
+                }
             AoaProtocol.ACCESSORY_UNREGISTER_HID -> unregisterResult
             else -> -1
         }

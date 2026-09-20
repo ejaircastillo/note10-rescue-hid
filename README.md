@@ -38,11 +38,11 @@ pantalla rota. Sin ADB, sin root, sin app en el Note10, sin red.
 ## Uso
 
 1. Instalar el APK en el teléfono **HOST**. Opciones:
-   - Descargar `note10-rescue-hid-1.0-debug.apk` desde la página de
+   - Descargar `note10-rescue-hid-1.0.6-pin-debug.apk` desde la página de
      [releases](https://github.com/ejaircastillo/note10-rescue-hid/releases) y
      abrirlo en el teléfono (hay que permitir "instalar apps de origen desconocido"
      para el navegador o el gestor de archivos que lo abra).
-   - O desde una PC con ADB: `adb install -r dist/note10-rescue-hid-1.0-debug.apk`.
+   - O desde una PC con ADB: `adb install -r dist/note10-rescue-hid-1.0.6-pin-debug.apk`.
 2. Abrir la app "Note10 Rescue HID" en el host.
 3. Conectar el Note10 con el cable **USB-C ↔ USB-C** (el que soporta datos).
 4. Si Android pregunta, elegir **"Este dispositivo"** como controlador/host USB.
@@ -114,7 +114,7 @@ decisión explícita del dueño, no un descuido.
 ```bash
 ./gradlew assembleDebug            # APK CON el PIN embebido (por defecto)
 ./gradlew assembleDebug -PskipPin=true   # APK SIN PIN (build público)
-./build-privado.sh                 # compila, copia a dist-privado/ y calcula sha256
+./build-privado.sh                 # compila, copia a dist/ con el nombre de la versión y calcula sha256
 ```
 
 - El PIN se embebe **ofuscado** (XOR 0x5A + hex): no aparece como texto plano en el
@@ -142,6 +142,31 @@ etiqueta `Prueba #N (no cuenta como intento)` y en la auditoría queda como
 `modo=PRUEBA_sin_envio`, así que **no consume intentos de desbloqueo** en el target.
 
 Sirve para comprobar que la app está en condiciones antes de gastar un intento real.
+
+## Envío rechazado (`result=-1`): no gasta un intento
+
+Medido en un Note10 real (reporte de campo del 2026-09-20): si el primer
+`SEND_HID_EVENT` sale **inmediatamente** después de `SET_HID_REPORT_DESC`, el
+dispositivo lo rechaza con `result=-1`; dos minutos después, los mismos reports
+pasan con `result=8` sin tocar nada. Es una carrera de inicialización del lado
+Android: el dispositivo HID todavía no está listo para recibir eventos.
+
+Desde v1.0.6 la app cubre ese caso sola:
+
+- Después de `SET_HID_REPORT_DESC` espera **1500 ms** (`esperando 1500ms a que el
+  dispositivo acepte eventos HID` → `listo para enviar`) antes del primer evento.
+- Si un report igual es rechazado, **reintenta el mismo report** hasta 3 veces, con
+  1 s entre intentos, y lo deja en el registro
+  (`SEND_HID_EVENT rechazado (result=-1); reintento 1/3 en 1000ms`).
+
+Eso **no** es un reintento de PIN: una transferencia rechazada no entrega ninguna
+tecla, así que no duplica pulsaciones ni cuenta como intento de desbloqueo. El
+reintento de secuencia sigue siendo tuyo: la app no vuelve a mandar el PIN sola.
+
+Si un envío **se corta a mitad** de la secuencia (se agotan los reintentos), el
+campo del bloqueo puede quedar con dígitos pegados. Para eso está la casilla
+**"Limpiar el campo antes del PIN (12 BACKSPACE)"**: manda 12 BACKSPACE antes de la
+secuencia, así cada intento arranca de un campo vacío. Es opt-in porque agrega ~2 s.
 
 ## Reportar un problema
 
@@ -171,39 +196,43 @@ contador vive en memoria: se reinicia cuando cerrás la app, no guarda nada.
 Verificado en este repositorio (salida de herramientas, no estimaciones):
 
 - `./gradlew clean test assembleDebug -PskipPin=true` → **BUILD SUCCESSFUL**.
-- **71 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
-  `AoaHidKeyboardTest` 31, `HidKeyboardReportsTest` 10, `HidKeycodesTest` 7,
+- **75 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
+  `AoaHidKeyboardTest` 35, `HidKeyboardReportsTest` 10, `HidKeycodesTest` 7,
   `UsbBusStateTest` 6, `PinVaultTest` 5, `SimulatedTransportTest` 5, `AuditEntryTest` 4,
   `DiagnosticsReportTest` 3.
 - El pipeline completo (GET_PROTOCOL → REGISTER_HID → SET_DESC → reports) se ejerce
   contra `SimulatedTransport`, que responde igual que un Android con AOA2: 12 reports
   para 4 dígitos con tecla de despertar, sin tocar ningún dispositivo.
-- Build privado verificado con un PIN real: el `.dex` **no** contiene el PIN en texto
+- **Reintento de report rechazado** cubierto por tests: con el transporte fallando el
+  primer evento (el caso real medido), la secuencia se completa igual, el conteo de
+  entregados no cambia y el registro marca `1 reintento de transferencia`.
+- Build con PIN verificado con el PIN real: el `.dex` **no** contiene el PIN en texto
   plano y **sí** la forma ofuscada; el APK público no contiene ninguna de las dos.
 - Descriptor HID comparado byte a byte contra `scrcpy/app/src/hid/hid_keyboard.c`
   con las macros resueltas: **63 bytes, 0 diferencias**.
 - APK inspeccionado con `aapt2 dump badging` / `dump permissions`: paquete
-  `com.ejair.note10rescue`, `versionCode 6`, `versionName 1.0.5`, `minSdk 24`,
+  `com.ejair.note10rescue`, `versionCode 7`, `versionName 1.0.6`, `minSdk 24`,
   `targetSdk 34`, `uses-feature usb.host`, **cero permisos declarados** (sin `INTERNET`).
-- `sha256` del APK público publicado (v1.0.5):
-  `81ad47c286b248ad5e52696f98c0f031227649b9f8a7aa108a17613c94e8ffdf`.
+- `sha256` del APK público publicado (v1.0.6):
+  `7366819956c9e0abc36b2de6600a255cb446a824ee82d7b8f5700d0b18611de0`.
 
-**No verificado físicamente**: la inyección real de teclas en el Note10 (requiere los
-dos teléfonos). Eso incluye el pipeline del botón OK contra hardware real. Para acortar
-esa distancia existe el **modo de prueba** (ver abajo), que lo ejercita todo salvo el
-USB físico.
+**Verificado contra el hardware real** (reporte de campo del 2026-09-20, host
+`SM-A366E` / Android 16, target `SAMSUNG_Android` VID `0x04E8` PID `0x6860`):
 
-**No verificado** (requiere los dos teléfonos físicos, que no están disponibles
-para quien escribió este código):
+- El host detecta el Note10 por USB y el usuario concede el permiso.
+- `Connection opened` → `GET_PROTOCOL: request=51 result=2` → **AOA protocol: 2**.
+- `REGISTER_HID: request=54 result=0` → **OK**.
+- `SET_HID_REPORT_DESC: request=56 result=63` → **OK** (el descriptor de 63 bytes se
+  acepta tal cual).
+- `HID READY` y **12 `SEND_HID_EVENT` con `result=8`** para una secuencia de 4 dígitos
+  con tecla de despertar previa (687 ms).
+- Ese mismo reporte dejó el hallazgo de la carrera de inicialización (primer report
+  rechazado con `result=-1`), que es lo que corrige v1.0.6.
 
-- Que el Note10 reciba las pulsaciones como si vinieran de un teclado USB físico
-  (criterio de éxito end-to-end). Lo que sí está verificado es que los control
-  transfers salen con los valores exactos que usa scrcpy.
-- Que el gadget del Note10 responda a la vendor request 51 **estando enumerado
-  como MTP**. Es el supuesto de `scrcpy --otg` (que no manda `ACCESSORY_START`).
-  Si el gadget no la expone, el síntoma es `AOA_PROTOCOL_QUERY_FAILED` y NO un
-  fallo de la app: probá el checkbox de fallback, desactivar la sesión MTP en el
-  host, o reconectar.
+**No verificado** (y no se puede verificar desde este canal): que el Note10 haya
+interpretado esas pulsaciones como teclado físico y se haya desbloqueado. AOA-HID es
+de una sola dirección: no hay confirmación, ni error, ni video. Los indicios
+indirectos están en "Cómo saber si entró".
 
 Otras limitaciones conocidas:
 
@@ -217,7 +246,7 @@ Otras limitaciones conocidas:
 
 ```
 NOTE10 RESCUE HID
-v1.0.2                            <- versión en el registro
+v1.0.6                            <- versión en el registro
 
 USB
 [ Detectar dispositivos ]        <- enumera y lista en radio buttons
@@ -233,6 +262,7 @@ Intentos enviados en esta sesión: 1                  <- contador manual + aviso
 PIN NUMÉRICO
 [ •••••••• ]                     <- numberPassword, se limpia al enviar
 [x] Enviar TAB antes del PIN     <- para el caso "se comió la primera tecla"
+[x] Limpiar el campo antes del PIN (12 BACKSPACE)    <- si un envío se cortó a mitad
 [ OK ]                           <- envío directo: un toque = una secuencia
    Envío directo listo: un toque = una secuencia.
 [ ENVIAR PIN UNA VEZ ]           <- usa el PIN escrito a mano
@@ -242,7 +272,7 @@ PIN NUMÉRICO
 
 REGISTRO TÉCNICO                 <- nunca muestra el PIN, y hace auto-scroll
 [ Compartir registro ] [ Copiar ] [ Limpiar registro ]
-00:00:00  Note10 Rescue HID v1.0.2 — todo lo que pasa queda en este registro
+00:00:00  Note10 Rescue HID v1.0.6 — todo lo que pasa queda en este registro
 00:00:00  USB device detected: 1
 00:00:00  USB permission granted
 00:00:00  Connection opened
@@ -250,12 +280,14 @@ REGISTRO TÉCNICO                 <- nunca muestra el PIN, y hace auto-scroll
 00:00:00  REGISTER_HID: OK
 00:00:00  SET_HID_REPORT_DESC: OK
 00:00:00  HID READY
-00:00:00  wake key (TAB) sent first
-00:00:00  6 digit sequence sent
-00:00:00  ENTER sent
-00:00:00  sequence summary: 6 dígitos, 14 reports OK, 1240ms
-00:00:00  Monitor USB: /dev/bus/usb/001/002 (VID 0x04E8 PID 0x6860)
-00:00:08  Monitor USB: fin de la ventana de 8s
+00:00:00  esperando 1500ms a que el dispositivo acepte eventos HID
+00:00:01  listo para enviar
+00:00:01  wake key (TAB) sent first
+00:00:02  6 digit sequence sent
+00:00:02  ENTER sent
+00:00:02  sequence summary: 6 dígitos, 14 reports OK, 1240ms
+00:00:02  Monitor USB: /dev/bus/usb/001/002 (VID 0x04E8 PID 0x6860)
+00:00:10  Monitor USB: fin de la ventana de 8s
 ```
 
 Estados posibles: `● HID no preparado`, `● Trabajando…`, `● HID preparado`,
@@ -358,32 +390,34 @@ pin-local.properties             PIN embebido (versionado a propósito, ver arri
 
 ## APK
 
-`dist/note10-rescue-hid-1.0.5-debug.apk` — APK debug de v1.0.5 **sin PIN** (build
-público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 71 unit
+`dist/note10-rescue-hid-1.0.6-debug.apk` — APK debug de v1.0.6 **sin PIN** (build
+público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 75 unit
 tests en verde, descriptor idéntico a scrcpy, sin ningún permiso declarado).
-886.291 bytes.
+888.347 bytes.
 
 ```
-sha256  81ad47c286b248ad5e52696f98c0f031227649b9f8a7aa108a17613c94e8ffdf
+sha256  7366819956c9e0abc36b2de6600a255cb446a824ee82d7b8f5700d0b18611de0
 ```
 
-`dist/note10-rescue-hid-1.0.5-pin-debug.apk` — el mismo código **con el PIN embebido**,
+`dist/note10-rescue-hid-1.0.6-pin-debug.apk` — el mismo código **con el PIN embebido**,
 publicado a pedido del dueño del dispositivo (ver más arriba). También está como asset
-del release v1.0.5 y en `pin-local.properties` (versionado a propósito).
+del release v1.0.6 y en `pin-local.properties` (versionado a propósito).
+888.343 bytes.
 
 ```
-sha256  ac52434f9fddd93896a307b0a90036b4381146e48b252088eb3721f62c507014
+sha256  fc66f040a58ea871df0b37c00e6484466c64ff72d818c68f9115e88c604b593c
 ```
 
-Los APK de v1.0.4, v1.0.3, v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin cambios para
-trazabilidad (ninguno lleva PIN). Todos están firmados con la misma clave de debug, así
+Los APK de v1.0.5, v1.0.4, v1.0.3, v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin
+cambios para trazabilidad (los de v1.0.0 a v1.0.4 no llevan PIN; el de v1.0.5 sí,
+publicado a pedido del dueño). Todos están firmados con la misma clave de debug, así
 que las actualizaciones se instalan encima sin desinstalar.
 
 Instalación desde una PC con ADB:
 
 ```bash
-adb install -r dist/note10-rescue-hid-1.0.5-pin-debug.apk    # con PIN embebido
-adb install -r dist/note10-rescue-hid-1.0.5-debug.apk        # sin PIN
+adb install -r dist/note10-rescue-hid-1.0.6-pin-debug.apk    # con PIN embebido
+adb install -r dist/note10-rescue-hid-1.0.6-debug.apk        # sin PIN
 ```
 
 ## Build
@@ -404,6 +438,30 @@ Los resultados de los tests quedan en `app/build/test-results/testDebugUnitTest/
 `app/build/reports/tests/testDebugUnitTest/index.html`.
 
 ## Cambios
+
+### v1.0.6
+
+Primera versión informada por una prueba **contra el Note10 real**. El reporte de campo
+mostró el pipeline completo funcionando (protocolo 2, `REGISTER_HID` OK, descriptor
+aceptado, 12 reports con `result=8`) y un defecto real: **el primer `SEND_HID_EVENT`
+inmediatamente después del descriptor es rechazado con `result=-1`**, mientras que el
+mismo envío, minutos después, pasa sin problema.
+
+- **Espera de asentamiento**: después de `SET_HID_REPORT_DESC` la app espera 1500 ms
+  antes del primer evento HID (carrera de inicialización del lado Android).
+- **Reintento del report rechazado**: si un `SEND_HID_EVENT` devuelve `result=-1`, se
+  reintenta **el mismo report** hasta 3 veces con 1 s de espera. Es seguro porque una
+  transferencia rechazada no entrega ninguna tecla: no duplica pulsaciones ni consume
+  intentos de desbloqueo. Si se agotan, el error sigue siendo `SEND_REPORT_FAILED` y el
+  registro aclara que ese envío **no contó como intento**.
+- **Casilla "Limpiar el campo antes del PIN (12 BACKSPACE)"** (opt-in): manda 12
+  BACKSPACE antes de la secuencia, para que un envío cortado a mitad no deje dígitos
+  pegados en el campo del bloqueo y arruine el intento siguiente.
+- El resumen y la auditoría ahora informan `campoLimpiado` y `reintentos`.
+- 4 tests nuevos (75 en total): asentamiento posterior al descriptor, reintento exitoso
+  del report rechazado (con la secuencia entregada intacta), agotamiento de reintentos y
+  limpieza de campo con los BACKSPACE.
+- Sin cambios de arquitectura, permisos, ni en el camino manual (TAB/BACKSPACE/ENTER).
 
 ### v1.0.5
 
