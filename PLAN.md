@@ -140,6 +140,22 @@ veredicto explícito con su fuerza relativa:
 el reporte, junto con la aclaración de que con la vibración del sistema desactivada
 "no vibró" no significa nada.
 
+## Permiso USB (v1.0.8): verificar no es pedir
+
+Segundo hallazgo del mismo ensayo: el registro mostró cinco `USB_PERMISSION_DENIED`
+seguidos **sin una sola línea de solicitud**. El botón "Preparar HID" comprobaba
+`hasPermission()` y fallaba, pero nunca llamaba a `requestPermission()`: mientras el
+permiso estaba cacheado de una conexión anterior el flujo andaba, y en cuanto se perdió
+(el cable se reconecta, el permiso es por sesión de conexión) el botón quedó en un error
+sin salida. Regla: **si el permiso es necesario para la acción, pedilo en ese camino**,
+no lo verifiques y abortes.
+
+Además, el resultado del diálogo no se puede dar por seguro (el broadcast puede no
+llegar), así que `PermissionPoll` sondea `UsbManager.hasPermission()` cada 500 ms hasta
+20 s como vía independiente, y el PendingIntent pasó a `FLAG_MUTABLE` (obligatorio en
+API 31+ para que el sistema agregue los extras). El timeout tiene su propio código
+(`USB_PERMISSION_TIMEOUT`) para no reportar como "denegado" algo que nunca se preguntó.
+
 ## Seguridad del PIN
 
 `numberPassword`, sin SharedPreferences/DB/archivo, `saveEnabled=false`, sin

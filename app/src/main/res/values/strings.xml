@@ -85,6 +85,7 @@
     <string name="verdict_none">Desbloqueo: SIN ENVÍOS — todavía no mandaste ninguna secuencia</string>
     <string name="msg_unlock_recorded">Indicios de desbloqueo registrados: %s</string>
     <string name="msg_usb_no_change">Monitor USB: sin cambios en %ds — no prueba nada por sí solo, mirá el veredicto de desbloqueo</string>
+    <string name="msg_waiting_permission">Esperando que el sistema confirme el permiso USB… (%ds). Si el diálogo está en pantalla, tocá PERMITIR</string>
     <string name="sim_mode">Modo de prueba: recorre todo el flujo sin tocar el Note10 (no gasta intentos)</string>
     <string name="sim_mode_on">MODO DE PRUEBA: transporte simulado — no se abre ni se toca el Note10</string>
     <string name="sim_mode_off">MODO REAL: los envíos van al Note10 y cuentan como intentos de desbloqueo</string>

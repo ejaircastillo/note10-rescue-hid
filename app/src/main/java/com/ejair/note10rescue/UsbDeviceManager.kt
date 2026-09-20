@@ -209,9 +209,22 @@ class UsbDeviceManager(private val context: Context) {
         val manager = usbManager
             ?: throw AoaException(AoaError.NO_USB_DEVICE, "UsbManager no disponible")
         pendingDevice = device
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        // FLAG_MUTABLE (API 31+) es obligatorio: el sistema tiene que poder agregar
+        // EXTRA_PERMISSION_GRANTED y EXTRA_DEVICE al Intent que entrega por el
+        // PendingIntent. Con FLAG_IMMUTABLE esos extras no llegan y el resultado se
+        // pierde (por eso además se sondea hasPermission()).
+        val mutability = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_MUTABLE
+        } else {
+            0
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or mutability
         val intent = Intent(ACTION_USB_PERMISSION).setPackage(context.packageName)
         val pendingIntent = PendingIntent.getBroadcast(context, REQUEST_CODE_PERMISSION, intent, flags)
+        onLog?.invoke(
+            "Solicitando permiso USB al sistema: tiene que aparecer el diálogo " +
+                "('¿Permitir que Note10 Rescue HID acceda al dispositivo USB?'), tocá PERMITIR"
+        )
         manager.requestPermission(device, pendingIntent)
     }
 

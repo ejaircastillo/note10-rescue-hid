@@ -12,7 +12,15 @@ enum class AoaError(val code: String, val description: String) {
     ),
     USB_PERMISSION_DENIED(
         "USB_PERMISSION_DENIED",
-        "El usuario no concedió permiso USB para el dispositivo seleccionado."
+        "El sistema respondió que NO se concedió el permiso USB (se canceló el diálogo o " +
+            "se tocó 'Denegar'). Volvé a tocar OK o Preparar HID y aceptá el diálogo."
+    ),
+    USB_PERMISSION_TIMEOUT(
+        "USB_PERMISSION_TIMEOUT",
+        "Se pidió el permiso USB y el sistema no confirmó nada en el tiempo esperado. El " +
+            "diálogo del sistema ('¿Permitir que la app acceda al dispositivo USB?') tiene " +
+            "que aparecer en pantalla: si no lo ves, desbloqueá el teléfono host y reintentá; " +
+            "si el cable se movió, reconectalo."
     ),
     OPEN_DEVICE_FAILED(
         "OPEN_DEVICE_FAILED",

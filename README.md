@@ -47,7 +47,10 @@ pantalla rota. Sin ADB, sin root, sin app en el Note10, sin red.
 3. Conectar el Note10 con el cable **USB-C ↔ USB-C** (el que soporta datos).
 4. Si Android pregunta, elegir **"Este dispositivo"** como controlador/host USB.
 5. Tocar **Detectar dispositivos** y elegir el Note10 en la lista (VID/PID/nombre).
-6. Conceder el **permiso USB** cuando aparezca el diálogo.
+6. Aceptar el **diálogo de permiso USB** del sistema (*"¿Permitir que Note10 Rescue HID
+   acceda al dispositivo USB?"*). Si no aparece o no lo aceptás, la app lo vuelve a pedir
+   desde **OK** o **Preparar HID** y espera hasta 20 s sondeando `hasPermission()`
+   (ver "Permiso USB" más abajo).
 7. Tocar **Preparar HID (registrar teclado)**. Cuando el estado diga
    **● HID preparado**, el Note10 ya ve un teclado físico.
 8. Despertar físicamente el Note10 con el botón lateral (AOA-HID sólo da entrada,
@@ -90,6 +93,34 @@ Indicios de que entró (ninguno es confirmación dura):
 - **Prueba MTP**: desenchufá el Note10 y conectalo a una PC. Android sólo expone el
   almacenamiento con el equipo desbloqueado: si aparece "Almacenamiento interno",
   se desbloqueó.
+
+## Permiso USB (cómo se pide y qué hacer si falla)
+
+Android no da acceso a un dispositivo USB por estar conectado: hay que pedirlo con
+`UsbManager.requestPermission()` y el **usuario** tiene que aceptar un diálogo del
+sistema. El permiso queda cacheado por sesión de conexión: si el cable se desconecta (o
+el Note10 se reinicia), hay que volver a concederlo.
+
+Desde v1.0.8:
+
+- **Todas las rutas lo piden**: elegir el dispositivo en la lista, el botón **OK** y el
+  botón **Preparar HID**. Antes, Preparar HID sólo *verificaba* el permiso y fallaba con
+  `USB_PERMISSION_DENIED` sin pedirlo nunca, así que si el permiso no estaba cacheado el
+  flujo quedaba trabado sin salida.
+- **Doble vía de confirmación**: además del broadcast del sistema (PendingIntent, ahora
+  con `FLAG_MUTABLE`, que es obligatorio para que lleguen los extras), la app **sondea**
+  `UsbManager.hasPermission()` cada 500 ms hasta 20 s. Si el broadcast no llega pero el
+  permiso se concedió, el sondeo lo detecta y sigue solo.
+- **Errores separados**: `USB_PERMISSION_DENIED` (el sistema dijo que no: se canceló el
+  diálogo o se tocó *Denegar*) vs `USB_PERMISSION_TIMEOUT` (se pidió y el sistema no
+  confirmó nada en 20 s: el diálogo no apareció, o el host estaba bloqueado).
+- El registro muestra cada paso: `Solicitando permiso USB al sistema: tiene que aparecer
+  el diálogo…`, `Esperando que el sistema confirme el permiso USB… (5s)` y
+  `USB permission granted (confirmado por sondeo de hasPermission)`.
+
+Si te quedás en `USB_PERMISSION_TIMEOUT`: desbloqueá el teléfono host, mirá la pantalla
+(el diálogo tiene que estar ahí), tocá **OK** de nuevo y aceptá. Si nada, desconectá y
+reconectá el cable: el permiso se pide de nuevo en la conexión siguiente.
 
 ## Veredicto de desbloqueo (¿entró o no?)
 
@@ -237,10 +268,13 @@ contador vive en memoria: se reinicia cuando cerrás la app, no guarda nada.
 Verificado en este repositorio (salida de herramientas, no estimaciones):
 
 - `./gradlew clean test assembleDebug -PskipPin=true` → **BUILD SUCCESSFUL**.
-- **89 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
+- **97 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
   `AoaHidKeyboardTest` 35, `UnlockEvidenceTest` 14, `HidKeyboardReportsTest` 10,
-  `HidKeycodesTest` 7, `UsbBusStateTest` 6, `PinVaultTest` 5, `SimulatedTransportTest` 5,
-  `AuditEntryTest` 4, `DiagnosticsReportTest` 3.
+  `HidKeycodesTest` 7, `UsbBusStateTest` 6, `PermissionPollTest` 5, `PinVaultTest` 5,
+  `SimulatedTransportTest` 5, `AuditEntryTest` 4, `AoaErrorTest` 3, `DiagnosticsReportTest` 3.
+- **Sondeo del permiso USB** cubierto por tests: concedido al primer intento (no espera),
+  concedido en el sondeo 3, concedido justo en el último sondeo, agotamiento del tiempo
+  sin permiso y aviso de progreso para el registro.
 - **Matriz del veredicto de desbloqueo** cubierta por tests: MTP visible ⇒ confirmado
   (manda sobre cualquier otro indicio), MTP ausente ⇒ no desbloqueado, vibración ⇒
   rechazado, sin vibración ⇒ probable (nunca confirmado), sin datos ⇒ indeterminado, y
@@ -256,10 +290,10 @@ Verificado en este repositorio (salida de herramientas, no estimaciones):
 - Descriptor HID comparado byte a byte contra `scrcpy/app/src/hid/hid_keyboard.c`
   con las macros resueltas: **63 bytes, 0 diferencias**.
 - APK inspeccionado con `aapt2 dump badging` / `dump permissions`: paquete
-  `com.ejair.note10rescue`, `versionCode 8`, `versionName 1.0.7`, `minSdk 24`,
+  `com.ejair.note10rescue`, `versionCode 9`, `versionName 1.0.8`, `minSdk 24`,
   `targetSdk 34`, `uses-feature usb.host`, **cero permisos declarados** (sin `INTERNET`).
-- `sha256` del APK público publicado (v1.0.7):
-  `071c8cea0721867129fdadaa843a601a64f1a1e40318385ecbb0c04d00d65089`.
+- `sha256` del APK público publicado (v1.0.8):
+  `1bd621171144ef8a7806c86466e545c9dabf9175f677d6c4c2c368f8f7bc768c`.
 
 **Verificado contra el hardware real** (reporte de campo del 2026-09-20, host
 `SM-A366E` / Android 16, target `SAMSUNG_Android` VID `0x04E8` PID `0x6860`):
@@ -374,7 +408,8 @@ versión real que informar.
 | Código | Significado / qué hacer |
 |---|---|
 | `NO_USB_DEVICE` | No hay ningún dispositivo USB conectado: revisá el cable y que el Note10 esté encendido. |
-| `USB_PERMISSION_DENIED` | Rechazaste el diálogo de permiso: tocá de nuevo Preparar HID y aceptá. |
+| `USB_PERMISSION_DENIED` | El sistema respondió que NO se concedió el permiso USB (se canceló el diálogo o se tocó *Denegar*). Volvé a tocar OK o Preparar HID y aceptá el diálogo. |
+| `USB_PERMISSION_TIMEOUT` | Se pidió el permiso y el sistema no confirmó nada en 20 s: el diálogo del sistema no apareció (o el host estaba bloqueado). Desbloqueá el host, reintentá, reconectá el cable si hace falta. |
 | `OPEN_DEVICE_FAILED` | El host no pudo abrir la conexión (`openDevice()` = null). Cerrá otras apps que estén usando el USB (MTP/Smart Switch) y reintentá. |
 | `AOA_PROTOCOL_QUERY_FAILED` | El control transfer 51 (GET_PROTOCOL) falló: el dispositivo no respondió como accesorio AOA. Sin el checkbox marcado el flujo se detiene acá; con "Intentar HID igualmente" marcado, la app **sí** intenta el HID (modo forzado, un solo intento). Ver "Fallback manual". |
 | `AOA_PROTOCOL_UNSUPPORTED` | El dispositivo respondió protocolo < 2 (AOA1): no declara AOA2. Sin el checkbox, se detiene; con "Intentar HID igualmente" marcado, intenta el HID igual (un solo intento). |
@@ -427,6 +462,7 @@ app/src/main/java/com/ejair/note10rescue/
   AuditTrail.kt            audit.log en almacenamiento privado + formato de auditoría
   SimulatedTransport.kt    transporte simulado del modo de prueba (no toca el target)
   UnlockEvidence.kt        indicios de desbloqueo + veredicto (puro, testeable)
+  PermissionPoll.kt        sondeo del permiso USB (puro, testeable)
   AoaProtocol.kt           51/54/55/56/57 y bmRequestType 0x40 / 0xC0
   AoaError.kt             códigos de error + AoaException
   ControlTransport.kt     interfaz de transporte (inyectable en tests)
@@ -441,30 +477,31 @@ app/src/test/java/com/ejair/note10rescue/
   AuditEntryTest.kt        líneas de auditoría sin filtrar el PIN
   SimulatedTransportTest.kt el pipeline completo contra el transporte simulado
   UnlockEvidenceTest.kt    matriz del veredicto de desbloqueo y sus límites
+  PermissionPollTest.kt    sondeo del permiso USB + códigos de error
 pin-local.properties             PIN embebido (versionado a propósito, ver arriba)
 ```
 
 ## APK
 
-`dist/note10-rescue-hid-1.0.7-debug.apk` — APK debug de v1.0.7 **sin PIN** (build
-público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 89 unit
+`dist/note10-rescue-hid-1.0.8-debug.apk` — APK debug de v1.0.8 **sin PIN** (build
+público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 97 unit
 tests en verde, descriptor idéntico a scrcpy, sin ningún permiso declarado).
-896.871 bytes.
+899.851 bytes.
 
 ```
-sha256  071c8cea0721867129fdadaa843a601a64f1a1e40318385ecbb0c04d00d65089
+sha256  1bd621171144ef8a7806c86466e545c9dabf9175f677d6c4c2c368f8f7bc768c
 ```
 
-`dist/note10-rescue-hid-1.0.7-pin-debug.apk` — el mismo código **con el PIN embebido**,
+`dist/note10-rescue-hid-1.0.8-pin-debug.apk` — el mismo código **con el PIN embebido**,
 publicado a pedido del dueño del dispositivo (ver más arriba). También está como asset
-del release v1.0.7 y en `pin-local.properties` (versionado a propósito).
-896.899 bytes.
+del release v1.0.8 y en `pin-local.properties` (versionado a propósito).
+899.831 bytes.
 
 ```
-sha256  0d662def4d97e70a2afffe20bc1363c69d9cac63782febbd45ea57645b5e8050
+sha256  141c9e3d26c98d19643c2cbc2a2d9bd937caeb4c34fbf5596094db378aac677d
 ```
 
-Los APK de v1.0.6, v1.0.5, v1.0.4, v1.0.3, v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin
+Los APK de v1.0.7 a v1.0.0 quedan publicados sin
 cambios para trazabilidad (los de v1.0.0 a v1.0.4 no llevan PIN; los de v1.0.5 en
 adelante sí, publicados a pedido del dueño). Todos están firmados con la misma clave de
 debug, así que las actualizaciones se instalan encima sin desinstalar.
@@ -472,8 +509,8 @@ debug, así que las actualizaciones se instalan encima sin desinstalar.
 Instalación desde una PC con ADB:
 
 ```bash
-adb install -r dist/note10-rescue-hid-1.0.7-pin-debug.apk    # con PIN embebido
-adb install -r dist/note10-rescue-hid-1.0.7-debug.apk        # sin PIN
+adb install -r dist/note10-rescue-hid-1.0.8-pin-debug.apk    # con PIN embebido
+adb install -r dist/note10-rescue-hid-1.0.8-debug.apk        # sin PIN
 ```
 
 ## Build
@@ -494,6 +531,26 @@ Los resultados de los tests quedan en `app/build/test-results/testDebugUnitTest/
 `app/build/reports/tests/testDebugUnitTest/index.html`.
 
 ## Cambios
+
+### v1.0.8
+
+Corrige un defecto que dejaba el flujo trabado: **el botón "Preparar HID" verificaba el
+permiso USB y fallaba, pero nunca lo pedía**. Si el permiso no estaba cacheado (por
+ejemplo después de reconectar el cable), la app respondía `USB_PERMISSION_DENIED` en
+cada toque sin mostrar nunca el diálogo del sistema. Se detectó con el registro de campo
+del 2026-09-20: cinco `USB_PERMISSION_DENIED` seguidos y **ninguna** línea de solicitud.
+
+- **Todas las rutas piden el permiso**: elegir el dispositivo, **OK** y **Preparar HID**
+  (esta última sigue con la preparación en cuanto se concede).
+- **Confirmación por dos vías**: broadcast del sistema (PendingIntent ahora con
+  `FLAG_MUTABLE`, obligatorio para que lleguen los extras) **y** sondeo de
+  `UsbManager.hasPermission()` cada 500 ms hasta 20 s.
+- **Error nuevo `USB_PERMISSION_TIMEOUT`**, separado de `USB_PERMISSION_DENIED`: antes,
+  "el diálogo nunca apareció" se reportaba como "el usuario denegó", que era falso.
+- El registro muestra la solicitud, la espera con progreso y si el permiso se confirmó
+  por sondeo.
+- `PermissionPoll` (lógica pura, sin Android) + 8 tests nuevos (97 en total, 0 fallas).
+- Sin permisos nuevos, sin red, sin brute force, nada instalado en el Note10.
 
 ### v1.0.7
 

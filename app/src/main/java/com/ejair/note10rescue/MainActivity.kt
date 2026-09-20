@@ -117,6 +117,13 @@ class MainActivity : Activity() {
     /** true cuando el botón OK pidió preparar el HID y, al lograrlo, debe enviar. */
     private var autoSendPending = false
 
+    /**
+     * true cuando el botón "Preparar HID" pidió el permiso USB y, al concederlo, debe
+     * seguir con la preparación. Antes esto no existía: Preparar HID sólo verificaba el
+     * permiso y fallaba, así que no había forma de concederlo desde ese botón.
+     */
+    private var preparePending = false
+
     /** Indicios de desbloqueo del último intento (vibración, bus USB, MTP). */
     private var observation: UnlockEvidence.Observation? = null
 
@@ -305,11 +312,46 @@ class MainActivity : Activity() {
             log("USB permission granted")
             onPermissionGranted()
         } else {
-            log("Solicitando permiso USB…")
-            try {
-                usb.requestPermission(info.device)
-            } catch (e: AoaException) {
-                onAoaError(e)
+            requestUsbPermission(info)
+        }
+    }
+
+    /**
+     * Pide el permiso USB y espera el resultado por dos vías: el broadcast del sistema
+     * (PendingIntent) y sondeo de `hasPermission()` cada 500 ms. El sondeo es el que
+     * salva el caso en que el broadcast no llega.
+     */
+    private fun requestUsbPermission(info: UsbDeviceInfo) {
+        try {
+            usb.requestPermission(info.device)
+        } catch (e: AoaException) {
+            preparePending = false
+            autoSendPending = false
+            onAoaError(e)
+            return
+        }
+        io.execute {
+            val granted = PermissionPoll(
+                onTick = { waited ->
+                    if (waited % 5_000L == 0L) {
+                        main.post { log(getString(R.string.msg_waiting_permission, (waited / 1000).toInt())) }
+                    }
+                }
+            ).await { usb.hasPermission(info.device) }
+            main.post {
+                if (granted) {
+                    log("USB permission granted (confirmado por sondeo de hasPermission)")
+                    onPermissionGranted()
+                } else {
+                    preparePending = false
+                    autoSendPending = false
+                    onAoaError(
+                        AoaException(
+                            AoaError.USB_PERMISSION_TIMEOUT,
+                            "device=${info.deviceName}, esperado ${PermissionPoll.DEFAULT_TIMEOUT_MS}ms"
+                        )
+                    )
+                }
             }
         }
     }
@@ -319,6 +361,8 @@ class MainActivity : Activity() {
         if (granted) {
             onPermissionGranted()
         } else {
+            preparePending = false
+            autoSendPending = false
             btnPrepare.isEnabled = false
             onAoaError(AoaException(AoaError.USB_PERMISSION_DENIED, "device=${device.deviceName}"))
         }
@@ -327,8 +371,11 @@ class MainActivity : Activity() {
     private fun onPermissionGranted() {
         btnPrepare.isEnabled = true
         setStatus(getString(R.string.status_idle))
-        // Si el envío directo había quedado esperando el permiso, seguimos acá.
-        if (autoSendPending) prepareHid()
+        // El permiso puede llegar por broadcast y por sondeo: sólo la primera vez debe
+        // disparar la acción pendiente (esto corre siempre en el hilo principal).
+        val pending = preparePending || autoSendPending
+        preparePending = false
+        if (pending) prepareHid()
     }
 
     private fun onDeviceDetached(device: UsbDevice) {
@@ -350,7 +397,11 @@ class MainActivity : Activity() {
                 return
             }
             if (usb.hasPermission(info.device).not()) {
-                onAoaError(AoaException(AoaError.USB_PERMISSION_DENIED, "device=${info.deviceName}"))
+                // No alcanza con avisar del permiso faltante: hay que PEDIRLO. (Antes
+                // este botón sólo fallaba, y no había forma de conceder el permiso desde
+                // acá: si el permiso no estaba cacheado, el flujo quedaba trabado.)
+                preparePending = true
+                requestUsbPermission(info)
                 return
             }
         }
@@ -473,13 +524,7 @@ class MainActivity : Activity() {
             return
         }
         if (!usb.hasPermission(info.device)) {
-            log("Envío directo: solicitando permiso USB…")
-            try {
-                usb.requestPermission(info.device)
-            } catch (e: AoaException) {
-                autoSendPending = false
-                onAoaError(e)
-            }
+            requestUsbPermission(info)
             return
         }
         prepareHid()
