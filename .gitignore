@@ -8,3 +8,9 @@ local.properties
 .externalNativeBuild
 .cxx
 build_output.txt
+
+# PIN embebido para el build PRIVADO: nunca se versiona ni se publica.
+pin-local.properties
+
+# APK del build privado (con PIN embebido): nunca se versiona.
+dist-privado/

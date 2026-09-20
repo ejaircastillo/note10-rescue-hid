@@ -56,4 +56,15 @@
     <string name="log_copied">Registro copiado al portapapeles (no contiene el PIN).</string>
     <string name="log_share_failed">No se pudo abrir el menú de compartir.</string>
     <string name="log_clipboard_unavailable">Portapapeles no disponible.</string>
+
+    <string name="ok_button">OK</string>
+    <string name="ok_hint">Envío directo cuando el teclado está preparado: un toque = una secuencia (10 s de espera entre envíos).</string>
+    <string name="ok_hint_ready">Envío directo listo: un toque = una secuencia.</string>
+    <string name="msg_no_pin_available">No hay PIN disponible: escribí uno en el campo PIN o compilá la app con el PIN embebido.</string>
+    <string name="msg_cooldown_active">Todavía en espera entre envíos (10 s).</string>
+    <string name="msg_embedded_pin">PIN embebido disponible (%1$d dígitos): nunca se muestra, nunca se registra.</string>
+    <string name="msg_no_embedded_pin">Sin PIN embebido en este build: usá el campo PIN.</string>
+    <string name="msg_auto_device">Envío directo: dispositivo elegido automáticamente.</string>
+    <string name="msg_auto_preparing">Envío directo: preparando el HID antes de enviar…</string>
+    <string name="audit_cleared">Bitácora de auditoría borrada.</string>
 </resources>

@@ -96,6 +96,10 @@ fallido).
 - `AoaProtocol` / `AoaError` / `AoaException` — constantes y errores con código.
 - `DiagnosticsReport` — arma el reporte técnico que el usuario comparte o copia
   (puro, testeable; nunca incluye el PIN).
+- `PinVault` — decodifica el PIN embebido del build privado (XOR 0x5A + hex). El valor
+  llega por `BuildConfig`, generado desde `pin-local.properties` (no versionado).
+- `AuditTrail` / `AuditEntry` — bitácora `audit.log` en `filesDir` (sin permisos) y su
+  formato puro y testeable.
 - `DeviceSnapshot` + `UsbDeviceManager.describeSnapshots()` / `diffSnapshots()` —
   comparación del estado del bus USB antes/después de un envío.
 
@@ -120,6 +124,18 @@ teclas). Botón "ENVIAR PIN UNA VEZ" → una secuencia, luego bloqueo de 10 s.
 - Contador de intentos de la sesión, en memoria, que suma sólo con el clic del
   usuario (Samsung escala desde los 5 intentos fallidos).
 
+## Envío directo y PIN embebido (v1.0.3)
+
+- Botón **OK**: pipeline completo (dispositivo → permiso → HID) y luego **una**
+  secuencia, con el cooldown de 10 s. Sin loops, sin reintentos automáticos.
+- PIN embebido **opcional**: `pin-local.properties` (en `.gitignore`) →
+  `buildConfigField` ofuscado (XOR 0x5A + hex, ver `PinVault`). Sin ese archivo el
+  campo queda vacío y el APK público no lleva ningún PIN. El APK con PIN embebido es
+  privado: no se publica ni se comparte.
+- Auditoría: `AuditTrail` escribe `audit.log` en `filesDir` (sin permisos) con origen
+  del PIN, dígitos, reports, duración, resultado y observaciones USB; el reporte
+  compartible la incluye. Nunca el PIN ni los keycodes.
+
 ## Build
 
 Gradle 8.10.2 + AGP 8.8.2 + Kotlin 2.1.20, compileSdk 34 (SDK local), minSdk 24,
@@ -128,8 +144,7 @@ Detalle del entorno de build y de lo verificado vs. no verificado en `README.md`
 
 ## Estado
 
-v1.0.2: implementado y compilado (`BUILD SUCCESSFUL`) con 57 unit tests en verde,
-descriptor idéntico a scrcpy (0 diferencias byte a byte) y APK sin permisos
-declarados. La verificación end-to-end con los dos teléfonos físicos queda
-pendiente y está listada en la sección "Estado de verificación y limitaciones"
-del `README.md`.
+v1.0.3: implementado y compilado (`BUILD SUCCESSFUL`) con 66 unit tests en verde,
+descriptor idéntico a scrcpy (0 diferencias byte a byte) y APK público sin permisos ni
+PIN. La verificación end-to-end con los dos teléfonos físicos queda pendiente y está
+listada en la sección "Estado de verificación y limitaciones" del `README.md`.

@@ -22,7 +22,8 @@ object DiagnosticsReport {
         attempts: Int,
         lastSequence: String,
         usbState: String,
-        logLines: List<String>
+        logLines: List<String>,
+        auditTrail: String = ""
     ): String {
         val included = if (logLines.size > MAX_LOG_LINES) logLines.takeLast(MAX_LOG_LINES) else logLines
         val omitted = logLines.size - included.size
@@ -40,6 +41,11 @@ object DiagnosticsReport {
             appendLine("--- registro (${included.size} líneas${if (omitted > 0) ", $omitted omitidas" else ""}) ---")
             included.forEach { appendLine(it) }
             appendLine("--- fin ---")
+            if (auditTrail.isNotBlank()) {
+                appendLine()
+                appendLine("--- bitácora de auditoría (audit.log) ---")
+                appendLine(auditTrail.trimEnd())
+            }
         }
     }
 }

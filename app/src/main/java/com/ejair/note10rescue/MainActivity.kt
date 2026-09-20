@@ -44,6 +44,10 @@ class MainActivity : Activity() {
 
         /** Cuántos segundos se monitorea el bus USB después de un envío. */
         const val USB_WATCH_SECONDS = 8
+
+        /** Origen del PIN, tal como se registra en la auditoría (nunca el valor). */
+        const val PIN_SOURCE_EMBEDDED = "embebido"
+        const val PIN_SOURCE_TYPED = "ingresado"
     }
 
     private lateinit var usb: UsbDeviceManager
@@ -52,6 +56,8 @@ class MainActivity : Activity() {
     private lateinit var tvSummary: TextView
     private lateinit var tvAttempts: TextView
     private lateinit var cbWakeKey: CheckBox
+    private lateinit var btnOk: Button
+    private lateinit var tvOkHint: TextView
     private lateinit var btnShareLog: Button
     private lateinit var btnCopyLog: Button
     private lateinit var tvDevice: TextView
@@ -91,6 +97,12 @@ class MainActivity : Activity() {
     private var lastUsbState = "—"
     private var appVersion = "?"
 
+    /** Bitácora de auditoría en el almacenamiento privado de la app (sin permisos). */
+    private lateinit var audit: AuditTrail
+
+    /** true cuando el botón OK pidió preparar el HID y, al lograrlo, debe enviar. */
+    private var autoSendPending = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Sin screenshots ni preview en el historial de recientes.
@@ -110,6 +122,8 @@ class MainActivity : Activity() {
         tvSummary = findViewById(R.id.tvSummary)
         tvAttempts = findViewById(R.id.tvAttempts)
         cbWakeKey = findViewById(R.id.cbWakeKey)
+        btnOk = findViewById(R.id.btnOk)
+        tvOkHint = findViewById(R.id.tvOkHint)
         btnShareLog = findViewById(R.id.btnShareLog)
         btnCopyLog = findViewById(R.id.btnCopyLog)
         rgDevices = findViewById(R.id.rgDevices)
@@ -146,9 +160,14 @@ class MainActivity : Activity() {
         btnClearLog.setOnClickListener {
             tvLog.text = ""
             logLines.clear()
+            audit.clear()
+            log(getString(R.string.audit_cleared))
         }
         btnShareLog.setOnClickListener { shareLog() }
         btnCopyLog.setOnClickListener { copyLog() }
+        btnOk.setOnClickListener { onOkPressed() }
+
+        audit = AuditTrail(this)
 
         appVersion = runCatching {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
@@ -158,6 +177,12 @@ class MainActivity : Activity() {
             log("Aviso: el sistema no declara android.hardware.usb.host")
         }
         log("Note10 Rescue HID v$appVersion — todo lo que pasa queda en este registro (nunca el PIN)")
+        if (PinVault.hasEmbeddedPin) {
+            log(getString(R.string.msg_embedded_pin, PinVault.embeddedPin.length))
+        } else {
+            log(getString(R.string.msg_no_embedded_pin))
+        }
+        audit.append(AuditEntry.session("inicio", PinVault.hasEmbeddedPin))
         log("Listo. Conectá el Note10 (USB-C a USB-C) y tocá 'Detectar dispositivos'")
     }
 
@@ -262,6 +287,8 @@ class MainActivity : Activity() {
     private fun onPermissionGranted() {
         btnPrepare.isEnabled = true
         setStatus(getString(R.string.status_idle))
+        // Si el envío directo había quedado esperando el permiso, seguimos acá.
+        if (autoSendPending) prepareHid()
     }
 
     private fun onDeviceDetached(device: UsbDevice) {
@@ -288,6 +315,7 @@ class MainActivity : Activity() {
         if (existing != null && existing.isRegistered) {
             log("HID ya estaba preparado (hidId=${AoaProtocol.HID_ID_KEYBOARD})")
             setStatus(getString(R.string.status_ready))
+            continueAutoSendIfPending()
             return
         }
 
@@ -317,16 +345,19 @@ class MainActivity : Activity() {
                     }
                     setKeyboardControlsEnabled(true)
                     btnPrepare.isEnabled = true
+                    continueAutoSendIfPending()
                 }
             } catch (e: AoaException) {
                 main.post {
                     keyboard = null
+                    autoSendPending = false
                     btnPrepare.isEnabled = true
                     onAoaError(e)
                 }
             } catch (t: Throwable) {
                 main.post {
                     keyboard = null
+                    autoSendPending = false
                     btnPrepare.isEnabled = true
                     onAoaError(
                         AoaException(
@@ -341,13 +372,8 @@ class MainActivity : Activity() {
 
     // -------------------------------------------------------------------- PIN
 
+    /** Botón manual: usa lo que el usuario escribió en el campo PIN. */
     private fun sendPinOnce() {
-        val aoa = keyboard
-        if (aoa == null || !aoa.isRegistered) {
-            log(getString(R.string.msg_hid_not_prepared))
-            onAoaError(AoaException(AoaError.HID_NOT_PREPARED))
-            return
-        }
         val typed = etPin.text.toString()
         if (typed.isEmpty()) {
             log(getString(R.string.msg_pin_empty))
@@ -361,27 +387,123 @@ class MainActivity : Activity() {
             log(getString(R.string.msg_pin_too_long))
             return
         }
-
         // El campo se limpia de inmediato: el PIN no se guarda ni se muestra.
         etPin.setText("")
-        startCooldown()
+        sendSequence(typed, PIN_SOURCE_TYPED)
+    }
 
+    /**
+     * Botón OK: hace todo el pipeline (elegir dispositivo, pedir permiso, preparar
+     * HID) y al terminar envía **una** secuencia. Un toque = una secuencia, con el
+     * mismo cooldown de 10 s: no hay reintentos automáticos ni nada en loop.
+     */
+    private fun onOkPressed() {
+        val pin = resolvePin()
+        if (pin.isEmpty()) {
+            log(getString(R.string.msg_no_pin_available))
+            onAoaError(AoaException(AoaError.INVALID_PIN, "sin PIN (ni embebido ni escrito)"))
+            return
+        }
+        val aoa = keyboard
+        if (aoa != null && aoa.isRegistered) {
+            sendSequence(pin, pinSourceLabel())
+            return
+        }
+
+        autoSendPending = true
+        log(getString(R.string.msg_auto_preparing))
+        val info = selected ?: autoSelectDevice()
+        if (info == null) {
+            autoSendPending = false
+            onAoaError(AoaException(AoaError.NO_USB_DEVICE, "deviceList() vacío"))
+            return
+        }
+        if (!usb.hasPermission(info.device)) {
+            log("Envío directo: solicitando permiso USB…")
+            try {
+                usb.requestPermission(info.device)
+            } catch (e: AoaException) {
+                autoSendPending = false
+                onAoaError(e)
+            }
+            return
+        }
+        prepareHid()
+    }
+
+    /** Continúa el envío pedido desde OK cuando el HID terminó de prepararse. */
+    private fun continueAutoSendIfPending() {
+        if (!autoSendPending) return
+        autoSendPending = false
+        val pin = resolvePin()
+        if (pin.isEmpty()) {
+            log(getString(R.string.msg_no_pin_available))
+            return
+        }
+        sendSequence(pin, pinSourceLabel())
+    }
+
+    /** PIN a usar: el embebido si existe; si no, el que está escrito en el campo. */
+    private fun resolvePin(): String =
+        if (PinVault.hasEmbeddedPin) PinVault.embeddedPin else etPin.text.toString()
+
+    private fun pinSourceLabel(): String =
+        if (PinVault.hasEmbeddedPin) PIN_SOURCE_EMBEDDED else PIN_SOURCE_TYPED
+
+    /** Elige el dispositivo solo: el Samsung si hay uno, si no el primero de la lista. */
+    private fun autoSelectDevice(): UsbDeviceInfo? {
+        val devices = usb.listDevices()
+        if (devices.isEmpty()) return null
+        val info = devices.firstOrNull { it.isSamsung() } ?: devices.first()
+        selected = info
+        tvDevice.text = "Dispositivo: ${info.label()}"
+        tvVid.text = "VID: 0x%04X".format(info.vendorId)
+        tvPid.text = "PID: 0x%04X".format(info.productId)
+        log("${getString(R.string.msg_auto_device)} ${info.deviceName}")
+        return info
+    }
+
+    /**
+     * Envía exactamente UNA secuencia con el PIN resuelto, con cooldown y auditoría.
+     * El PIN sólo vive en esta llamada mientras se envía; nunca se registra.
+     */
+    private fun sendSequence(pin: String, pinSource: String) {
+        val aoa = keyboard
+        if (aoa == null || !aoa.isRegistered) {
+            log(getString(R.string.msg_hid_not_prepared))
+            onAoaError(AoaException(AoaError.HID_NOT_PREPARED))
+            return
+        }
+        if (System.currentTimeMillis() < cooldownUntil) {
+            log(getString(R.string.msg_cooldown_active))
+            return
+        }
+        if (pin.isEmpty() || pin.any { it !in '0'..'9' }) {
+            log(getString(R.string.msg_pin_digits_only))
+            onAoaError(AoaException(AoaError.INVALID_PIN, "pin inválido"))
+            return
+        }
+
+        startCooldown()
+        val number = attemptsSent + 1
         val wakeKeyFirst = cbWakeKey.isChecked
         io.execute {
             try {
-                // Exactamente UNA secuencia: dígitos escritos a mano + ENTER
-                // (+ TAB opcional antes, si el usuario lo pidió).
-                val stats = aoa.sendPinAndEnter(typed, wakeKeyFirst = wakeKeyFirst)
+                // Exactamente UNA secuencia: dígitos + ENTER (+ TAB opcional antes).
+                val stats = aoa.sendPinAndEnter(pin, wakeKeyFirst = wakeKeyFirst)
+                audit.append(AuditEntry.attempt(number, pinSource, stats))
                 main.post {
-                    attemptsSent++
+                    attemptsSent = number
                     updateAttempts()
                     lastSequenceSummary = stats.summary()
                     tvSummary.text = getString(R.string.summary_fmt, lastSequenceSummary)
                     setStatus(getString(R.string.status_ready))
+                    log("Envío #$number (PIN $pinSource): ${stats.summary()}")
                     log("Esperá 3-5 s antes de concluir nada (el desbloqueo puede demorar)")
                 }
                 watchTargetUsbState()
             } catch (e: AoaException) {
+                audit.append(AuditEntry.failure(number, e.aoaError, e.detail))
                 main.post { onAoaError(e) }
             }
         }
@@ -412,6 +534,7 @@ class MainActivity : Activity() {
                 if (UsbDeviceManager.hasChanges(current, now)) {
                     val detail = UsbDeviceManager.diffSnapshots(current, now)
                     current = now
+                    audit.append(AuditEntry.usbObservation(detail))
                     main.post {
                         lastUsbState = detail
                         log("CAMBIO USB: $detail  <- indicio de cambio de estado del Note10")
@@ -446,6 +569,7 @@ class MainActivity : Activity() {
             return
         }
         btnSendPin.text = getString(R.string.wait_seconds, ((remaining + 999) / 1000).toInt())
+        tvOkHint.text = getString(R.string.msg_cooldown_active)
         main.postDelayed({ tickCooldown() }, 250)
     }
 
@@ -503,7 +627,8 @@ class MainActivity : Activity() {
             attempts = attemptsSent,
             lastSequence = lastSequenceSummary,
             usbState = lastUsbState,
-            logLines = logLines.toList()
+            logLines = logLines.toList(),
+            auditTrail = audit.read()
         )
     }
 
@@ -539,12 +664,18 @@ class MainActivity : Activity() {
     private fun setKeyboardControlsEnabled(enabled: Boolean) {
         val ready = enabled && System.currentTimeMillis() >= cooldownUntil
         btnSendPin.isEnabled = ready
+        btnOk.isEnabled = ready
         btnTab.isEnabled = enabled
         btnBackspace.isEnabled = enabled
         btnEnter.isEnabled = enabled
         btnUnregister.isEnabled = enabled
         if (!enabled) {
             btnSendPin.text = getString(R.string.send_pin_once)
+        }
+        tvOkHint.text = when {
+            !enabled -> getString(R.string.ok_hint)
+            !ready -> getString(R.string.msg_cooldown_active)
+            else -> getString(R.string.ok_hint_ready)
         }
     }
 

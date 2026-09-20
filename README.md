@@ -91,6 +91,44 @@ Indicios de que entró (ninguno es confirmación dura):
   almacenamiento con el equipo desbloqueado: si aparece "Almacenamiento interno",
   se desbloqueó.
 
+## Envío directo (botón OK) y PIN embebido
+
+**Botón OK**: un toque hace todo el pipeline cuando hace falta (elegir el dispositivo
+—el Samsung si hay uno—, pedir permiso, preparar el HID) y recién entonces envía
+**una** secuencia. Si el HID ya está preparado, envía directo. Después queda el mismo
+bloqueo de 10 s y **no hay reintentos automáticos**: cada envío es un toque tuyo.
+
+El PIN que usa sale de esta precedencia:
+
+1. **PIN embebido en el build** (build privado, ver abajo), o
+2. el que escribas en el campo PIN (botón *ENVIAR PIN UNA VEZ*).
+
+### PIN embebido: cómo se compila el APK privado
+
+El repositorio es público, así que el PIN **no** puede estar en el código ni en el
+APK publicado. El build lo lee de un archivo local que **está en .gitignore**:
+
+```bash
+cp pin-local.properties.example pin-local.properties
+# editar pin-local.properties ->  pin=1234
+./gradlew assembleDebug
+```
+
+- Con ese archivo, Gradle embebe el PIN **ofuscado** (XOR 0x5A + hex) en el APK y
+  avisa por consola: `PIN embebido de N dígitos -> APK PRIVADO, no publicar`.
+- Sin ese archivo (o sea, en cualquier clon del repo), el campo queda vacío, el
+  botón OK avisa que no hay PIN y **el APK no lleva ningún PIN**.
+
+Advertencias concretas:
+
+- La ofuscación evita que aparezca como texto plano en el `.dex`; **no es
+  criptografía**. Quien tenga ese APK puede recuperarlo. Por eso ese APK **no se
+  publica ni se comparte**, y conviene que el PIN no sea el mismo que usás en otros
+  equipos, cuentas o tarjetas.
+- `pin-local.properties` nunca se versiona (verificado: está en `.gitignore`).
+- El PIN nunca se muestra, nunca se registra en el log ni en la auditoría, y se
+  descarta al cerrar la app (nada de SharedPreferences, archivos ni red).
+
 ## Reportar un problema
 
 Dos botones abajo del registro:
@@ -98,8 +136,9 @@ Dos botones abajo del registro:
 - **Compartir registro**: arma un reporte con la versión de la app, el modelo y la
   versión de Android del host, el dispositivo elegido (VID/PID), el protocolo
   informado, el estado, los intentos de la sesión, el resumen del último envío, el
-  estado USB observado y las últimas 300 líneas del registro. Lo manda por el menú
-  de compartir (mail, mensajería, Drive…) — sin permisos y sin que la app use
+  estado USB observado, las últimas 300 líneas del registro **y la bitácora de
+  auditoría** (`audit.log`, en el almacenamiento privado de la app). Lo manda por el
+  menú de compartir (mail, mensajería, Drive…) — sin permisos y sin que la app use
   internet.
 - **Copiar**: lo mismo, al portapapeles.
 
@@ -118,16 +157,18 @@ contador vive en memoria: se reinicia cuando cerrás la app, no guarda nada.
 Verificado en este repositorio (salida de herramientas, no estimaciones):
 
 - `./gradlew clean test assembleDebug` → **BUILD SUCCESSFUL**.
-- **57 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
+- **66 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
   `AoaHidKeyboardTest` 31, `HidKeyboardReportsTest` 10, `HidKeycodesTest` 7,
-  `UsbBusStateTest` 6, `DiagnosticsReportTest` 3.
+  `UsbBusStateTest` 6, `PinVaultTest` 5, `AuditEntryTest` 4, `DiagnosticsReportTest` 3.
+- Build privado verificado con un PIN de prueba: el `.dex` **no** contiene el PIN en
+  texto plano y **sí** la forma ofuscada; el build público no contiene ninguna de las dos.
 - Descriptor HID comparado byte a byte contra `scrcpy/app/src/hid/hid_keyboard.c`
   con las macros resueltas: **63 bytes, 0 diferencias**.
 - APK inspeccionado con `aapt2 dump badging` / `dump permissions`: paquete
-  `com.ejair.note10rescue`, `versionCode 3`, `versionName 1.0.2`, `minSdk 24`,
+  `com.ejair.note10rescue`, `versionCode 4`, `versionName 1.0.3`, `minSdk 24`,
   `targetSdk 34`, `uses-feature usb.host`, **cero permisos declarados** (sin `INTERNET`).
-- `sha256` del APK publicado (v1.0.2):
-  `e5ad710ae669c88394c8b3652ab07cba78049181e5594b9b2639b2297795825e`.
+- `sha256` del APK público publicado (v1.0.3):
+  `c38a19a275f54cc2a80674e0aa96e76e17df2f20eced3ebe6f5d810aeedb89e1`.
 
 **No verificado** (requiere los dos teléfonos físicos, que no están disponibles
 para quien escribió este código):
@@ -169,7 +210,9 @@ Intentos enviados en esta sesión: 1                  <- contador manual + aviso
 PIN NUMÉRICO
 [ •••••••• ]                     <- numberPassword, se limpia al enviar
 [x] Enviar TAB antes del PIN     <- para el caso "se comió la primera tecla"
-[ ENVIAR PIN UNA VEZ ]           <- se bloquea 10 s y muestra "Bloqueado N s…"
+[ OK ]                           <- envío directo: un toque = una secuencia
+   Envío directo listo: un toque = una secuencia.
+[ ENVIAR PIN UNA VEZ ]           <- usa el PIN escrito a mano
 
 [ Mostrar controles manuales ]   <- despliega el panel
    [ Enviar TAB ] [ Enviar BACKSPACE ] [ Enviar ENTER ] [ Desregistrar HID ]
@@ -271,6 +314,8 @@ app/src/main/java/com/ejair/note10rescue/
   HidKeycodes.kt           dígito -> HID usage id + etiquetas seguras de log
   HidKeyboardReports.kt    reports de 8 bytes (down / release / ENTER)
   DiagnosticsReport.kt     arma el reporte compartible (nunca incluye el PIN)
+  PinVault.kt              PIN embebido del build privado (decodifica el XOR+hex)
+  AuditTrail.kt            audit.log en almacenamiento privado + formato de auditoría
   AoaProtocol.kt           51/54/55/56/57 y bmRequestType 0x40 / 0xC0
   AoaError.kt             códigos de error + AoaException
   ControlTransport.kt     interfaz de transporte (inyectable en tests)
@@ -281,27 +326,32 @@ app/src/test/java/com/ejair/note10rescue/
   HidKeycodesTest.kt       mapeo dígito -> keycode
   UsbBusStateTest.kt       comparación de estado del bus USB
   DiagnosticsReportTest.kt el reporte compartible no filtra el PIN
+  PinVaultTest.kt          formato del PIN embebido (ida y vuelta)
+  AuditEntryTest.kt        líneas de auditoría sin filtrar el PIN
+pin-local.properties.example   plantilla del build privado (el real está en .gitignore)
 ```
 
 ## APK
 
-`dist/note10-rescue-hid-1.0.2-debug.apk` — APK debug de v1.0.2, compilado y verificado
-(`BUILD SUCCESSFUL`, 57 unit tests en verde, descriptor idéntico a scrcpy, sin ningún
-permiso declarado). 877.127 bytes.
+`dist/note10-rescue-hid-1.0.3-debug.apk` — APK debug de v1.0.3, compilado y verificado
+(`BUILD SUCCESSFUL`, 66 unit tests en verde, descriptor idéntico a scrcpy, sin ningún
+permiso declarado, **sin PIN embebido**: es el build público). 884.347 bytes.
 
 ```
-sha256  e5ad710ae669c88394c8b3652ab07cba78049181e5594b9b2639b2297795825e
+sha256  c38a19a275f54cc2a80674e0aa96e76e17df2f20eced3ebe6f5d810aeedb89e1
 ```
 
-Los APK de v1.0.1 (`dist/note10-rescue-hid-1.0.1-debug.apk`) y v1.0.0
-(`dist/note10-rescue-hid-1.0-debug.apk`) quedan publicados sin cambios para
-trazabilidad. Al estar firmados con la misma clave de debug, la actualización se
-instala encima sin desinstalar.
+El APK con el PIN embebido (build privado desde `pin-local.properties`) **no se
+publica**: se compila localmente y se instala a mano.
+
+Los APK de v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin cambios para trazabilidad. Al
+estar todos firmados con la misma clave de debug, las actualizaciones se instalan
+encima sin desinstalar.
 
 Instalación desde una PC con ADB:
 
 ```bash
-adb install -r dist/note10-rescue-hid-1.0.2-debug.apk
+adb install -r dist/note10-rescue-hid-1.0.3-debug.apk
 ```
 
 ## Build
@@ -322,6 +372,24 @@ Los resultados de los tests quedan en `app/build/test-results/testDebugUnitTest/
 `app/build/reports/tests/testDebugUnitTest/index.html`.
 
 ## Cambios
+
+### v1.0.3
+
+Envío directo y auditoría. Sigue sin permisos nuevos, sin red, sin brute force y sin
+nada instalado en el Note10.
+
+- **Botón OK** ("envío directo"): un toque encadena lo que falte (elegir dispositivo,
+  permiso USB, preparar HID) y envía **una** secuencia, con el mismo bloqueo de 10 s.
+  No hay loops ni reintentos automáticos.
+- **PIN embebido opcional** para ese botón: se inyecta en tiempo de build desde
+  `pin-local.properties` (en `.gitignore`), **ofuscado** (XOR 0x5A + hex). El repo y el
+  APK publicado no contienen ningún PIN; el APK privado no se publica.
+- **Bitácora de auditoría** (`audit.log`, almacenamiento privado de la app, sin
+  permisos): una línea por intento con origen del PIN (*embebido*/ingresado), cantidad
+  de dígitos, reports, duración, resultado, y las observaciones del bus USB. Se incluye
+  en el reporte que compartís.
+- 9 tests nuevos (66 en total): formato del PIN ofuscado y de la auditoría.
+- El envío directo resuelve el PIN así: embebido si existe, si no el del campo PIN.
 
 ### v1.0.2
 
