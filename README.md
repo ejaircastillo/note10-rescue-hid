@@ -95,8 +95,9 @@ Indicios de que entró (ninguno es confirmación dura):
 
 **Botón OK**: un toque hace todo el pipeline cuando hace falta (elegir el dispositivo
 —el Samsung si hay uno—, pedir permiso, preparar el HID) y recién entonces envía
-**una** secuencia. Si el HID ya está preparado, envía directo. Después queda el mismo
-bloqueo de 10 s y **no hay reintentos automáticos**: cada envío es un toque tuyo.
+**una** secuencia. Está habilitado desde que abrís la app (no hace falta preparar nada
+antes). Si el HID ya está preparado, envía directo. Después queda el mismo bloqueo de
+10 s y **no hay reintentos automáticos**: cada envío es un toque tuyo.
 
 El PIN que usa sale de esta precedencia:
 
@@ -119,6 +120,8 @@ cp pin-local.properties.example pin-local.properties
   avisa por consola: `PIN embebido de N dígitos -> APK PRIVADO, no publicar`.
 - Sin ese archivo (o sea, en cualquier clon del repo), el campo queda vacío, el
   botón OK avisa que no hay PIN y **el APK no lleva ningún PIN**.
+- Si el archivo existe pero querés compilar el APK **público** (sin PIN):
+  `./gradlew assembleDebug -PskipPin=true`.
 
 Advertencias concretas:
 
@@ -161,15 +164,15 @@ Verificado en este repositorio (salida de herramientas, no estimaciones):
 - **66 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
   `AoaHidKeyboardTest` 31, `HidKeyboardReportsTest` 10, `HidKeycodesTest` 7,
   `UsbBusStateTest` 6, `PinVaultTest` 5, `AuditEntryTest` 4, `DiagnosticsReportTest` 3.
-- Build privado verificado con un PIN de prueba: el `.dex` **no** contiene el PIN en
-  texto plano y **sí** la forma ofuscada; el build público no contiene ninguna de las dos.
+- Build privado verificado con un PIN real: el `.dex` **no** contiene el PIN en texto
+  plano y **sí** la forma ofuscada; el APK público no contiene ninguna de las dos.
 - Descriptor HID comparado byte a byte contra `scrcpy/app/src/hid/hid_keyboard.c`
   con las macros resueltas: **63 bytes, 0 diferencias**.
 - APK inspeccionado con `aapt2 dump badging` / `dump permissions`: paquete
-  `com.ejair.note10rescue`, `versionCode 4`, `versionName 1.0.3`, `minSdk 24`,
+  `com.ejair.note10rescue`, `versionCode 5`, `versionName 1.0.4`, `minSdk 24`,
   `targetSdk 34`, `uses-feature usb.host`, **cero permisos declarados** (sin `INTERNET`).
-- `sha256` del APK público publicado (v1.0.3):
-  `c38a19a275f54cc2a80674e0aa96e76e17df2f20eced3ebe6f5d810aeedb89e1`.
+- `sha256` del APK público publicado (v1.0.4):
+  `866354b3f04fdd1afe42face0b613bca4b9ac5646657933541131e41bbcc3bda`.
 
 **No verificado** (requiere los dos teléfonos físicos, que no están disponibles
 para quien escribió este código):
@@ -334,25 +337,26 @@ pin-local.properties.example   plantilla del build privado (el real está en .gi
 
 ## APK
 
-`dist/note10-rescue-hid-1.0.3-debug.apk` — APK debug de v1.0.3, compilado y verificado
+`dist/note10-rescue-hid-1.0.4-debug.apk` — APK debug de v1.0.4, compilado y verificado
 (`BUILD SUCCESSFUL`, 66 unit tests en verde, descriptor idéntico a scrcpy, sin ningún
-permiso declarado, **sin PIN embebido**: es el build público). 884.347 bytes.
+permiso declarado, **sin PIN embebido**: es el build público). 884.435 bytes.
 
 ```
-sha256  c38a19a275f54cc2a80674e0aa96e76e17df2f20eced3ebe6f5d810aeedb89e1
+sha256  866354b3f04fdd1afe42face0b613bca4b9ac5646657933541131e41bbcc3bda
 ```
 
-El APK con el PIN embebido (build privado desde `pin-local.properties`) **no se
-publica**: se compila localmente y se instala a mano.
+El APK con el PIN embebido (build privado desde `pin-local.properties`, verificado
+también: 0 apariciones del PIN en texto plano en el `.dex`) **no se publica**: se
+compila localmente y se instala a mano.
 
-Los APK de v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin cambios para trazabilidad. Al
-estar todos firmados con la misma clave de debug, las actualizaciones se instalan
-encima sin desinstalar.
+Los APK de v1.0.3, v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin cambios para
+trazabilidad. Al estar todos firmados con la misma clave de debug, las actualizaciones
+se instalan encima sin desinstalar.
 
 Instalación desde una PC con ADB:
 
 ```bash
-adb install -r dist/note10-rescue-hid-1.0.3-debug.apk
+adb install -r dist/note10-rescue-hid-1.0.4-debug.apk
 ```
 
 ## Build
@@ -373,6 +377,18 @@ Los resultados de los tests quedan en `app/build/test-results/testDebugUnitTest/
 `app/build/reports/tests/testDebugUnitTest/index.html`.
 
 ## Cambios
+
+### v1.0.4
+
+- **Corregido el botón OK**: antes quedaba deshabilitado hasta que el HID estuviera
+  preparado, así que el pipeline automático (elegir dispositivo → permiso → preparar
+  → enviar) era inalcanzable. Ahora está disponible desde que abrís la app y hace todo
+  lo que falte antes de enviar.
+- Nueva bandera `-PskipPin=true` para compilar el APK público aunque exista
+  `pin-local.properties` en la máquina.
+- Build privado verificado con un PIN real: 0 apariciones en texto plano en el `.dex`,
+  1 aparición de la forma ofuscada.
+- 66 unit tests, 0 fallas.
 
 ### v1.0.3
 

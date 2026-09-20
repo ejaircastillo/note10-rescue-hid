@@ -183,6 +183,7 @@ class MainActivity : Activity() {
             log(getString(R.string.msg_no_embedded_pin))
         }
         audit.append(AuditEntry.session("inicio", PinVault.hasEmbeddedPin))
+        setKeyboardControlsEnabled(false)
         log("Listo. Conectá el Note10 (USB-C a USB-C) y tocá 'Detectar dispositivos'")
     }
 
@@ -663,8 +664,11 @@ class MainActivity : Activity() {
 
     private fun setKeyboardControlsEnabled(enabled: Boolean) {
         val ready = enabled && System.currentTimeMillis() >= cooldownUntil
+        val okReady = System.currentTimeMillis() >= cooldownUntil
         btnSendPin.isEnabled = ready
-        btnOk.isEnabled = ready
+        // El botón OK queda disponible aunque el HID no esté preparado: él mismo hace
+        // el pipeline (elegir dispositivo, pedir permiso, preparar HID) y recién envía.
+        btnOk.isEnabled = okReady
         btnTab.isEnabled = enabled
         btnBackspace.isEnabled = enabled
         btnEnter.isEnabled = enabled
@@ -673,9 +677,9 @@ class MainActivity : Activity() {
             btnSendPin.text = getString(R.string.send_pin_once)
         }
         tvOkHint.text = when {
-            !enabled -> getString(R.string.ok_hint)
-            !ready -> getString(R.string.msg_cooldown_active)
-            else -> getString(R.string.ok_hint_ready)
+            !okReady -> getString(R.string.msg_cooldown_active)
+            ready -> getString(R.string.ok_hint_ready)
+            else -> getString(R.string.ok_hint)
         }
     }
 

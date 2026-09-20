@@ -13,12 +13,16 @@ plugins {
  * tiene la clave `pin`), el campo queda vacío, la app funciona igual y el botón de
  * envío directo avisa que no hay PIN.
  *
+ * Para forzar el build público aunque el archivo exista:
+ *     ./gradlew assembleDebug -PskipPin=true
+ *
  * Se embebe ofuscado (XOR 0x5A + hex, igual que PinVault.decode) para que no aparezca
  * como texto plano en el .dex. Es ofuscación, no criptografía: el APK privado no se
  * publica ni se comparte.
  */
 val pinLocalFile = rootProject.file("pin-local.properties")
-val embeddedPin: String = if (pinLocalFile.exists()) {
+val skipPin = (project.findProperty("skipPin") as String?) == "true"
+val embeddedPin: String = if (!skipPin && pinLocalFile.exists()) {
     Properties().apply { pinLocalFile.inputStream().use { load(it) } }
         .getProperty("pin", "")
         .trim()
@@ -30,7 +34,7 @@ fun obfuscatePin(pin: String): String =
     pin.map { ((it.code xor 0x5A) and 0xFF).toString(16).padStart(2, '0') }.joinToString("")
 
 if (embeddedPin.isEmpty()) {
-    println("pin-local.properties: sin PIN embebido (build público)")
+    println("pin-local.properties: sin PIN embebido (build público${if (skipPin) ", -PskipPin" else ""})")
 } else {
     println("pin-local.properties: PIN embebido de ${embeddedPin.length} dígitos -> APK PRIVADO, no publicar")
 }
@@ -43,8 +47,8 @@ android {
         applicationId = "com.ejair.note10rescue"
         minSdk = 24
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         // PIN ofuscado (o cadena vacía en el build público).
         buildConfigField("String", "EMBEDDED_PIN_OBFUSCATED", "\"${obfuscatePin(embeddedPin)}\"")

@@ -127,7 +127,9 @@ teclas). Botón "ENVIAR PIN UNA VEZ" → una secuencia, luego bloqueo de 10 s.
 ## Envío directo y PIN embebido (v1.0.3)
 
 - Botón **OK**: pipeline completo (dispositivo → permiso → HID) y luego **una**
-  secuencia, con el cooldown de 10 s. Sin loops, sin reintentos automáticos.
+  secuencia, con el cooldown de 10 s. Sin loops, sin reintentos automáticos. Habilitado
+  desde el arranque (v1.0.4: antes quedaba deshabilitado hasta preparar el HID y el
+  pipeline era inalcanzable).
 - PIN embebido **opcional**: `pin-local.properties` (en `.gitignore`) →
   `buildConfigField` ofuscado (XOR 0x5A + hex, ver `PinVault`). Sin ese archivo el
   campo queda vacío y el APK público no lleva ningún PIN. El APK con PIN embebido es
@@ -144,7 +146,7 @@ Detalle del entorno de build y de lo verificado vs. no verificado en `README.md`
 
 ## Estado
 
-v1.0.3: implementado y compilado (`BUILD SUCCESSFUL`) con 66 unit tests en verde,
+v1.0.4: implementado y compilado (`BUILD SUCCESSFUL`) con 66 unit tests en verde,
 descriptor idéntico a scrcpy (0 diferencias byte a byte) y APK público sin permisos ni
 PIN. La verificación end-to-end con los dos teléfonos físicos queda pendiente y está
 listada en la sección "Estado de verificación y limitaciones" del `README.md`.

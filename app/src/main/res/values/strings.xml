@@ -58,7 +58,7 @@
     <string name="log_clipboard_unavailable">Portapapeles no disponible.</string>
 
     <string name="ok_button">OK</string>
-    <string name="ok_hint">Envío directo cuando el teclado está preparado: un toque = una secuencia (10 s de espera entre envíos).</string>
+    <string name="ok_hint">Un toque prepara lo que falte (dispositivo, permiso, HID) y envía una secuencia: 10 s de espera entre envíos.</string>
     <string name="ok_hint_ready">Envío directo listo: un toque = una secuencia.</string>
     <string name="msg_no_pin_available">No hay PIN disponible: escribí uno en el campo PIN o compilá la app con el PIN embebido.</string>
     <string name="msg_cooldown_active">Todavía en espera entre envíos (10 s).</string>
