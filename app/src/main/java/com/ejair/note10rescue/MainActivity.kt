@@ -1,6 +1,7 @@
 package com.ejair.note10rescue
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -42,8 +43,12 @@ class MainActivity : Activity() {
         const val MAX_PIN_DIGITS = 12
         const val MAX_LOG_CHARS = 40_000
 
-        /** Cuántos segundos se monitorea el bus USB después de un envío. */
-        const val USB_WATCH_SECONDS = 8
+        /**
+         * Cuántos segundos se monitorea el bus USB después de un envío. La ventana es
+         * larga a propósito: el cambio de configuración del target (si ocurre) puede
+         * tardar; que no ocurra no prueba nada, pero si ocurre es un indicio a favor.
+         */
+        const val USB_WATCH_SECONDS = 20
 
         /** Origen del PIN, tal como se registra en la auditoría (nunca el valor). */
         const val PIN_SOURCE_EMBEDDED = "embebido"
@@ -81,6 +86,12 @@ class MainActivity : Activity() {
     private lateinit var btnEnter: Button
     private lateinit var btnUnregister: Button
     private lateinit var btnClearLog: Button
+    private lateinit var tvUnlockVerdict: TextView
+    private lateinit var rgVibration: RadioGroup
+    private lateinit var rbVibroSi: RadioButton
+    private lateinit var rbVibroNo: RadioButton
+    private lateinit var rbVibroUnknown: RadioButton
+    private lateinit var btnCheckMtp: Button
 
     private val io: ExecutorService = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -106,6 +117,15 @@ class MainActivity : Activity() {
     /** true cuando el botón OK pidió preparar el HID y, al lograrlo, debe enviar. */
     private var autoSendPending = false
 
+    /** Indicios de desbloqueo del último intento (vibración, bus USB, MTP). */
+    private var observation: UnlockEvidence.Observation? = null
+
+    /** Lo que vio el monitor USB: se copia a la observación cuando cierra la ventana. */
+    private var usbEvidence = UnlockEvidence.Usb.SIN_DATO
+
+    /** Evita que el marcado programático del radio dispare el registro. */
+    private var suppressObservation = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Sin screenshots ni preview en el historial de recientes.
@@ -127,6 +147,17 @@ class MainActivity : Activity() {
         cbWakeKey = findViewById(R.id.cbWakeKey)
         cbSimulated = findViewById(R.id.cbSimulated)
         cbClearField = findViewById(R.id.cbClearField)
+
+        tvUnlockVerdict = findViewById(R.id.tvUnlockVerdict)
+        rgVibration = findViewById(R.id.rgVibration)
+        rbVibroSi = findViewById(R.id.rbVibroSi)
+        rbVibroNo = findViewById(R.id.rbVibroNo)
+        rbVibroUnknown = findViewById(R.id.rbVibroUnknown)
+        btnCheckMtp = findViewById(R.id.btnCheckMtp)
+        rgVibration.setOnCheckedChangeListener { _, checkedId ->
+            if (!suppressObservation) onVibrationChanged(checkedId)
+        }
+        btnCheckMtp.setOnClickListener { askMtp() }
         btnOk = findViewById(R.id.btnOk)
         tvOkHint = findViewById(R.id.tvOkHint)
         btnShareLog = findViewById(R.id.btnShareLog)
@@ -524,7 +555,10 @@ class MainActivity : Activity() {
                 audit.append(AuditEntry.attempt(number, pinSource, stats, simulated))
                 main.post {
                     if (simulated) simulatedRuns = number else attemptsSent = number
-                    if (!simulated) updateAttempts()
+                    if (!simulated) {
+                        updateAttempts()
+                        startObservation(number)
+                    }
                     lastSequenceSummary = stats.summary()
                     tvSummary.text = getString(R.string.summary_fmt, lastSequenceSummary)
                     setStatus(getString(R.string.status_ready))
@@ -536,6 +570,7 @@ class MainActivity : Activity() {
                         }
                     )
                     log("Esperá 3-5 s antes de concluir nada (el desbloqueo puede demorar)")
+                    log("Después marcá en 'RESULTADO OBSERVADO' si el Note10 vibró y comprobá con MTP: ahí está el veredicto")
                 }
                 watchTargetUsbState()
             } catch (e: AoaException) {
@@ -569,6 +604,7 @@ class MainActivity : Activity() {
         }
         io.execute {
             var current = reference
+            var changed = false
             repeat(USB_WATCH_SECONDS) {
                 try {
                     Thread.sleep(1000L)
@@ -579,6 +615,7 @@ class MainActivity : Activity() {
                 if (UsbDeviceManager.hasChanges(current, now)) {
                     val detail = UsbDeviceManager.diffSnapshots(current, now)
                     current = now
+                    changed = true
                     audit.append(AuditEntry.usbObservation(detail))
                     main.post {
                         lastUsbState = detail
@@ -586,8 +623,74 @@ class MainActivity : Activity() {
                     }
                 }
             }
-            main.post { log("Monitor USB: fin de la ventana de ${USB_WATCH_SECONDS}s") }
+            main.post {
+                log("Monitor USB: fin de la ventana de ${USB_WATCH_SECONDS}s")
+                onUsbWindowClosed(changed)
+            }
         }
+    }
+
+    // ------------------------------------------------ indicios de desbloqueo
+
+    /** Arranca los indicios del intento [number] y deja el veredicto a la vista. */
+    private fun startObservation(number: Int) {
+        suppressObservation = true
+        rgVibration.check(R.id.rbVibroUnknown)
+        suppressObservation = false
+        usbEvidence = UnlockEvidence.Usb.SIN_DATO
+        observation = UnlockEvidence.Observation(attempt = number)
+        recordObservation()
+    }
+
+    private fun onVibrationChanged(checkedId: Int) {
+        val vibration = when (checkedId) {
+            R.id.rbVibroSi -> UnlockEvidence.Vibration.SI
+            R.id.rbVibroNo -> UnlockEvidence.Vibration.NO
+            else -> UnlockEvidence.Vibration.SIN_DATO
+        }
+        val current = observation ?: UnlockEvidence.Observation(attempt = attemptsSent)
+        observation = current.copy(vibration = vibration, usb = usbEvidence)
+        recordObservation()
+    }
+
+    /** Cierra la ventana del monitor USB: guarda el indicio y aclara qué significa. */
+    private fun onUsbWindowClosed(changed: Boolean) {
+        usbEvidence = if (changed) UnlockEvidence.Usb.CAMBIO else UnlockEvidence.Usb.SIN_CAMBIO
+        observation = observation?.copy(usb = usbEvidence)
+        updateUnlockVerdict()
+        if (!changed) {
+            log(getString(R.string.msg_usb_no_change, USB_WATCH_SECONDS))
+        }
+    }
+
+    /** Pregunta por MTP: es el único indicio decisivo (Android sólo expone el
+     *  almacenamiento con el equipo desbloqueado). */
+    private fun askMtp() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.mtp_title)
+            .setMessage(R.string.mtp_guide)
+            .setPositiveButton(R.string.mtp_yes) { _, _ -> setMtp(UnlockEvidence.Mtp.SI) }
+            .setNegativeButton(R.string.mtp_no) { _, _ -> setMtp(UnlockEvidence.Mtp.NO) }
+            .setNeutralButton(R.string.mtp_not_tested) { _, _ -> setMtp(UnlockEvidence.Mtp.NO_PROBADO) }
+            .show()
+    }
+
+    private fun setMtp(mtp: UnlockEvidence.Mtp) {
+        val current = observation ?: UnlockEvidence.Observation(attempt = attemptsSent)
+        observation = current.copy(mtp = mtp, usb = usbEvidence)
+        recordObservation()
+    }
+
+    /** Deja el veredicto en la pantalla, en el registro y en la bitácora. */
+    private fun recordObservation() {
+        val current = observation ?: return
+        updateUnlockVerdict()
+        audit.append(AuditEntry.unlockObservation(current))
+        log(getString(R.string.msg_unlock_recorded, UnlockEvidence.verdict(current)))
+    }
+
+    private fun updateUnlockVerdict() {
+        tvUnlockVerdict.text = getString(R.string.verdict_fmt, UnlockEvidence.verdict(observation))
     }
 
     private fun updateAttempts() {
@@ -673,7 +776,8 @@ class MainActivity : Activity() {
             lastSequence = lastSequenceSummary,
             usbState = lastUsbState,
             logLines = logLines.toList(),
-            auditTrail = audit.read()
+            auditTrail = audit.read(),
+            unlockEvidence = UnlockEvidence.report(observation, lastUsbState)
         )
     }
 

@@ -63,6 +63,12 @@ object AuditEntry {
 
     fun usbObservation(detail: String): String = "OBSERVACION-USB $detail"
 
+    /** Indicios de desbloqueo + veredicto: es la línea que responde "¿entró o no?". */
+    fun unlockObservation(observation: UnlockEvidence.Observation): String =
+        "DESBLOQUEO intento=#${observation.attempt} vibracion=${observation.vibration.name} " +
+            "usb=${observation.usb.name} mtp=${observation.mtp.name} " +
+            "veredicto=${UnlockEvidence.verdict(observation)}"
+
     fun session(action: String, embedded: Boolean): String =
         "SESION $action origenDisponible=${if (embedded) "embebido" else "ninguno"}"
 }

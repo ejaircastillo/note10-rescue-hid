@@ -38,11 +38,11 @@ pantalla rota. Sin ADB, sin root, sin app en el Note10, sin red.
 ## Uso
 
 1. Instalar el APK en el teléfono **HOST**. Opciones:
-   - Descargar `note10-rescue-hid-1.0.6-pin-debug.apk` desde la página de
+   - Descargar `note10-rescue-hid-1.0.7-pin-debug.apk` desde la página de
      [releases](https://github.com/ejaircastillo/note10-rescue-hid/releases) y
      abrirlo en el teléfono (hay que permitir "instalar apps de origen desconocido"
      para el navegador o el gestor de archivos que lo abra).
-   - O desde una PC con ADB: `adb install -r dist/note10-rescue-hid-1.0.6-pin-debug.apk`.
+   - O desde una PC con ADB: `adb install -r dist/note10-rescue-hid-1.0.7-pin-debug.apk`.
 2. Abrir la app "Note10 Rescue HID" en el host.
 3. Conectar el Note10 con el cable **USB-C ↔ USB-C** (el que soporta datos).
 4. Si Android pregunta, elegir **"Este dispositivo"** como controlador/host USB.
@@ -83,13 +83,53 @@ Indicios de que entró (ninguno es confirmación dura):
 
 - **Vibración**: tené el Note10 en la mano al enviar. PIN incorrecto → aviso corto
   de fallo; correcto → desbloqueo.
-- **Monitor USB**: la app mira el bus USB durante 8 s después del envío y registra
+- **Monitor USB**: la app mira el bus USB durante 20 s después del envío y registra
   `CAMBIO USB: re-enumeró ... (VID/PID 0x... -> 0x...)` si el Note10 cambia de
   configuración, que es lo típico al desbloquearse (activa MTP). Que diga
-  `sin cambios en el bus USB` **no** prueba que no se haya desbloqueado.
+  `sin cambios en la ventana de 20s` **no** prueba que no se haya desbloqueado.
 - **Prueba MTP**: desenchufá el Note10 y conectalo a una PC. Android sólo expone el
   almacenamiento con el equipo desbloqueado: si aparece "Almacenamiento interno",
   se desbloqueó.
+
+## Veredicto de desbloqueo (¿entró o no?)
+
+El protocolo AOA-HID es **unidireccional**: la app manda teclas y no recibe ninguna
+confirmación, así que no puede "leer" del Note10 si se desbloqueó. Lo que sí hace
+(v1.0.7) es juntar los indicios observables, dejar un **veredicto explícito** en la
+pantalla y en el reporte, y no afirmar más de lo que se puede sostener.
+
+Sección **RESULTADO OBSERVADO** de la pantalla:
+
+```
+RESULTADO OBSERVADO (¿se desbloqueó?)
+Desbloqueo: RECHAZADO — el Note10 vibró (Android avisa así el PIN incorrecto)
+( ) Sin dato todavía
+( ) No vibró
+(•) Vibró (Android avisa así el PIN incorrecto)
+[ Comprobar desbloqueo (MTP en una PC) ]
+```
+
+Marcá la vibración después de cada envío, y cuando puedas hacé la comprobación por
+MTP (el botón abre la guía: desenchufar del host → conectar a una PC → mirar si
+aparece el almacenamiento). El veredicto se recalcula solo y queda en la bitácora.
+
+**Matriz de decisión** (en este orden de fuerza):
+
+| Indicio | Veredicto | Confianza |
+|---|---|---|
+| La PC muestra el almacenamiento del Note10 (MTP) | `CONFIRMADO — el Note10 está desbloqueado` | Decisivo |
+| La PC no muestra nada | `NO DESBLOQUEADO — la PC no vio el almacenamiento` | Decisivo |
+| Vibró al enviar | `RECHAZADO — Android avisa así el PIN incorrecto` | Alta |
+| No vibró, sin dato de MTP | `PROBABLE — falta confirmar con MTP` | Media |
+| Sin dato de vibración | `INDETERMINADO — falta el dato de vibración` | Nula |
+| No hubo envíos | `SIN ENVÍOS — no hubo ningún envío en esta sesión` | — |
+
+El **cambio de configuración USB** en el host es un indicio a favor cuando ocurre,
+pero no alcanza para confirmar nada por sí solo: por eso no cambia el veredicto.
+
+Ojo con un detalle importante: si el Note10 tiene la **vibración del sistema
+desactivada**, no vas a sentir nada aunque el PIN falle. Por eso `PROBABLE` nunca se
+muestra como confirmación, y el reporte lo aclara por escrito.
 
 ## Envío directo (botón OK) y PIN embebido
 
@@ -175,8 +215,9 @@ Dos botones abajo del registro:
 - **Compartir registro**: arma un reporte con la versión de la app, el modelo y la
   versión de Android del host, el dispositivo elegido (VID/PID), el protocolo
   informado, el estado, los intentos de la sesión, el resumen del último envío, el
-  estado USB observado, las últimas 300 líneas del registro **y la bitácora de
-  auditoría** (`audit.log`, en el almacenamiento privado de la app). Lo manda por el
+  estado USB observado, el bloque de desbloqueo con indicios y veredicto, las últimas
+  300 líneas del registro **y la bitácora de auditoría** (`audit.log`, en el
+  almacenamiento privado de la app). Lo manda por el
   menú de compartir (mail, mensajería, Drive…) — sin permisos y sin que la app use
   internet.
 - **Copiar**: lo mismo, al portapapeles.
@@ -196,10 +237,14 @@ contador vive en memoria: se reinicia cuando cerrás la app, no guarda nada.
 Verificado en este repositorio (salida de herramientas, no estimaciones):
 
 - `./gradlew clean test assembleDebug -PskipPin=true` → **BUILD SUCCESSFUL**.
-- **75 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
-  `AoaHidKeyboardTest` 35, `HidKeyboardReportsTest` 10, `HidKeycodesTest` 7,
-  `UsbBusStateTest` 6, `PinVaultTest` 5, `SimulatedTransportTest` 5, `AuditEntryTest` 4,
-  `DiagnosticsReportTest` 3.
+- **89 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
+  `AoaHidKeyboardTest` 35, `UnlockEvidenceTest` 14, `HidKeyboardReportsTest` 10,
+  `HidKeycodesTest` 7, `UsbBusStateTest` 6, `PinVaultTest` 5, `SimulatedTransportTest` 5,
+  `AuditEntryTest` 4, `DiagnosticsReportTest` 3.
+- **Matriz del veredicto de desbloqueo** cubierta por tests: MTP visible ⇒ confirmado
+  (manda sobre cualquier otro indicio), MTP ausente ⇒ no desbloqueado, vibración ⇒
+  rechazado, sin vibración ⇒ probable (nunca confirmado), sin datos ⇒ indeterminado, y
+  el reporte explica sus propios límites.
 - El pipeline completo (GET_PROTOCOL → REGISTER_HID → SET_DESC → reports) se ejerce
   contra `SimulatedTransport`, que responde igual que un Android con AOA2: 12 reports
   para 4 dígitos con tecla de despertar, sin tocar ningún dispositivo.
@@ -211,10 +256,10 @@ Verificado en este repositorio (salida de herramientas, no estimaciones):
 - Descriptor HID comparado byte a byte contra `scrcpy/app/src/hid/hid_keyboard.c`
   con las macros resueltas: **63 bytes, 0 diferencias**.
 - APK inspeccionado con `aapt2 dump badging` / `dump permissions`: paquete
-  `com.ejair.note10rescue`, `versionCode 7`, `versionName 1.0.6`, `minSdk 24`,
+  `com.ejair.note10rescue`, `versionCode 8`, `versionName 1.0.7`, `minSdk 24`,
   `targetSdk 34`, `uses-feature usb.host`, **cero permisos declarados** (sin `INTERNET`).
-- `sha256` del APK público publicado (v1.0.6):
-  `7366819956c9e0abc36b2de6600a255cb446a824ee82d7b8f5700d0b18611de0`.
+- `sha256` del APK público publicado (v1.0.7):
+  `071c8cea0721867129fdadaa843a601a64f1a1e40318385ecbb0c04d00d65089`.
 
 **Verificado contra el hardware real** (reporte de campo del 2026-09-20, host
 `SM-A366E` / Android 16, target `SAMSUNG_Android` VID `0x04E8` PID `0x6860`):
@@ -246,7 +291,7 @@ Otras limitaciones conocidas:
 
 ```
 NOTE10 RESCUE HID
-v1.0.6                            <- versión en el registro
+v1.0.7                            <- versión en el registro
 
 USB
 [ Detectar dispositivos ]        <- enumera y lista en radio buttons
@@ -267,12 +312,19 @@ PIN NUMÉRICO
    Envío directo listo: un toque = una secuencia.
 [ ENVIAR PIN UNA VEZ ]           <- usa el PIN escrito a mano
 
+RESULTADO OBSERVADO (¿se desbloqueó?)     <- v1.0.7: veredicto de desbloqueo
+Desbloqueo: PROBABLE — sin vibración de rechazo; falta confirmar con MTP
+( ) Sin dato todavía
+( ) No vibró
+(•) Vibró (Android avisa así el PIN incorrecto)
+[ Comprobar desbloqueo (MTP en una PC) ]
+
 [ Mostrar controles manuales ]   <- despliega el panel
    [ Enviar TAB ] [ Enviar BACKSPACE ] [ Enviar ENTER ] [ Desregistrar HID ]
 
 REGISTRO TÉCNICO                 <- nunca muestra el PIN, y hace auto-scroll
 [ Compartir registro ] [ Copiar ] [ Limpiar registro ]
-00:00:00  Note10 Rescue HID v1.0.6 — todo lo que pasa queda en este registro
+00:00:00  Note10 Rescue HID v1.0.7 — todo lo que pasa queda en este registro
 00:00:00  USB device detected: 1
 00:00:00  USB permission granted
 00:00:00  Connection opened
@@ -287,7 +339,9 @@ REGISTRO TÉCNICO                 <- nunca muestra el PIN, y hace auto-scroll
 00:00:02  ENTER sent
 00:00:02  sequence summary: 6 dígitos, 14 reports OK, 1240ms
 00:00:02  Monitor USB: /dev/bus/usb/001/002 (VID 0x04E8 PID 0x6860)
-00:00:10  Monitor USB: fin de la ventana de 8s
+00:00:22  Monitor USB: fin de la ventana de 20s
+00:00:22  Monitor USB: sin cambios en 20s — no prueba nada por sí solo, mirá el veredicto
+00:00:22  Indicios de desbloqueo registrados: PROBABLE — sin vibración de rechazo; falta confirmar con MTP
 ```
 
 Estados posibles: `● HID no preparado`, `● Trabajando…`, `● HID preparado`,
@@ -372,6 +426,7 @@ app/src/main/java/com/ejair/note10rescue/
   PinVault.kt              PIN embebido del build privado (decodifica el XOR+hex)
   AuditTrail.kt            audit.log en almacenamiento privado + formato de auditoría
   SimulatedTransport.kt    transporte simulado del modo de prueba (no toca el target)
+  UnlockEvidence.kt        indicios de desbloqueo + veredicto (puro, testeable)
   AoaProtocol.kt           51/54/55/56/57 y bmRequestType 0x40 / 0xC0
   AoaError.kt             códigos de error + AoaException
   ControlTransport.kt     interfaz de transporte (inyectable en tests)
@@ -385,39 +440,40 @@ app/src/test/java/com/ejair/note10rescue/
   PinVaultTest.kt          formato del PIN embebido (ida y vuelta)
   AuditEntryTest.kt        líneas de auditoría sin filtrar el PIN
   SimulatedTransportTest.kt el pipeline completo contra el transporte simulado
+  UnlockEvidenceTest.kt    matriz del veredicto de desbloqueo y sus límites
 pin-local.properties             PIN embebido (versionado a propósito, ver arriba)
 ```
 
 ## APK
 
-`dist/note10-rescue-hid-1.0.6-debug.apk` — APK debug de v1.0.6 **sin PIN** (build
-público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 75 unit
+`dist/note10-rescue-hid-1.0.7-debug.apk` — APK debug de v1.0.7 **sin PIN** (build
+público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 89 unit
 tests en verde, descriptor idéntico a scrcpy, sin ningún permiso declarado).
-888.347 bytes.
+896.871 bytes.
 
 ```
-sha256  7366819956c9e0abc36b2de6600a255cb446a824ee82d7b8f5700d0b18611de0
+sha256  071c8cea0721867129fdadaa843a601a64f1a1e40318385ecbb0c04d00d65089
 ```
 
-`dist/note10-rescue-hid-1.0.6-pin-debug.apk` — el mismo código **con el PIN embebido**,
+`dist/note10-rescue-hid-1.0.7-pin-debug.apk` — el mismo código **con el PIN embebido**,
 publicado a pedido del dueño del dispositivo (ver más arriba). También está como asset
-del release v1.0.6 y en `pin-local.properties` (versionado a propósito).
-888.343 bytes.
+del release v1.0.7 y en `pin-local.properties` (versionado a propósito).
+896.899 bytes.
 
 ```
-sha256  fc66f040a58ea871df0b37c00e6484466c64ff72d818c68f9115e88c604b593c
+sha256  0d662def4d97e70a2afffe20bc1363c69d9cac63782febbd45ea57645b5e8050
 ```
 
-Los APK de v1.0.5, v1.0.4, v1.0.3, v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin
-cambios para trazabilidad (los de v1.0.0 a v1.0.4 no llevan PIN; el de v1.0.5 sí,
-publicado a pedido del dueño). Todos están firmados con la misma clave de debug, así
-que las actualizaciones se instalan encima sin desinstalar.
+Los APK de v1.0.6, v1.0.5, v1.0.4, v1.0.3, v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin
+cambios para trazabilidad (los de v1.0.0 a v1.0.4 no llevan PIN; los de v1.0.5 en
+adelante sí, publicados a pedido del dueño). Todos están firmados con la misma clave de
+debug, así que las actualizaciones se instalan encima sin desinstalar.
 
 Instalación desde una PC con ADB:
 
 ```bash
-adb install -r dist/note10-rescue-hid-1.0.6-pin-debug.apk    # con PIN embebido
-adb install -r dist/note10-rescue-hid-1.0.6-debug.apk        # sin PIN
+adb install -r dist/note10-rescue-hid-1.0.7-pin-debug.apk    # con PIN embebido
+adb install -r dist/note10-rescue-hid-1.0.7-debug.apk        # sin PIN
 ```
 
 ## Build
@@ -438,6 +494,30 @@ Los resultados de los tests quedan en `app/build/test-results/testDebugUnitTest/
 `app/build/reports/tests/testDebugUnitTest/index.html`.
 
 ## Cambios
+
+### v1.0.7
+
+El reporte ahora **responde si el Note10 se desbloqueó o no**, que era el punto que
+quedaba a interpretación. AOA-HID no devuelve confirmación (es unidireccional), así que
+en vez de inventar un canal que no existe, la app junta los indicios observables y
+emite un veredicto explícito.
+
+- **Sección "RESULTADO OBSERVADO"** en la pantalla: marcás si el Note10 vibró (Android
+  vibra cuando el PIN es incorrecto) y el veredicto se recalcula al instante.
+- **Botón "Comprobar desbloqueo (MTP en una PC)"**: guía de 3 pasos y registro de la
+  respuesta. Es el único indicio **decisivo**: Android sólo expone el almacenamiento con
+  el equipo desbloqueado.
+- **Matriz de veredicto**: `CONFIRMADO` (MTP visible) / `NO DESBLOQUEADO` (MTP ausente) /
+  `RECHAZADO` (vibró) / `PROBABLE` (no vibró, sin MTP) / `INDETERMINADO` (sin dato) /
+  `SIN ENVÍOS`. MTP manda sobre todo lo demás; el cambio de bus USB es un indicio a
+  favor pero no cambia el veredicto.
+- **El reporte compartible lleva el bloque "desbloqueo (indicios y veredicto)"** con los
+  indicios, su fuerza relativa y la aclaración de que, con la vibración del sistema
+  desactivada, "no vibró" no significa nada.
+- **Monitor USB de 8 s → 20 s** (el cambio de configuración del target puede tardar) y
+  aviso explícito de que la ausencia de cambios no prueba nada.
+- `UnlockEvidence` (lógica pura, sin Android) + 14 tests nuevos (89 en total).
+- Sin permisos nuevos, sin red, sin brute force, nada instalado en el Note10.
 
 ### v1.0.6
 

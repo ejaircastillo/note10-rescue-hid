@@ -172,6 +172,65 @@
             android:enabled="false"
             android:text="@string/send_pin_once" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="10dp"
+            android:text="@string/section_unlock"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvUnlockVerdict"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:text="@string/verdict_none"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="4dp"
+            android:text="@string/vibro_hint"
+            android:textSize="11sp" />
+
+        <RadioGroup
+            android:id="@+id/rgVibration"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/rbVibroUnknown"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/vibro_unknown"
+                android:textSize="12sp" />
+
+            <RadioButton
+                android:id="@+id/rbVibroNo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/vibro_no"
+                android:textSize="12sp" />
+
+            <RadioButton
+                android:id="@+id/rbVibroSi"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/vibro_si"
+                android:textSize="12sp" />
+        </RadioGroup>
+
+        <Button
+            android:id="@+id/btnCheckMtp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/check_mtp" />
+
         <Button
             android:id="@+id/btnToggleManual"
             android:layout_width="match_parent"

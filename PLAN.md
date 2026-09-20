@@ -107,7 +107,7 @@ fallido).
   Android con AOA2 (protocolo 2, descriptor aceptado, reports de 8) sin tocar ningún
   dispositivo, para ejercitar el pipeline completo sin gastar intentos de desbloqueo.
 
-## Hallazgo de campo (v1.0.6)
+## Hallazgo de campo (v1.0.6) y veredicto de desbloqueo (v1.0.7)
 
 El primer ensayo contra un Note10 real (2026-09-20) confirmó el camino elegido
 (protocolo 2, `REGISTER_HID` OK, descriptor de 63 bytes aceptado, 12 reports con
@@ -125,6 +125,20 @@ Correcciones (v1.0.6):
   secuencia", que sigue intacta);
 - casilla manual "limpiar el campo antes del PIN" (12 BACKSPACE), para que un envío
   cortado a mitad no deje dígitos pegados en el campo del bloqueo.
+
+En el mismo ensayo quedó claro el hueco más importante del reporte: **no decía si el
+teléfono se desbloqueó o no**. AOA-HID es unidireccional, así que no se puede leer del
+protocolo; la salida (v1.0.7) es registrar los indicios observables y emitir un
+veredicto explícito con su fuerza relativa:
+
+- **MTP en una PC** (decisivo): Android sólo expone el almacenamiento desbloqueado.
+- **Vibración de rechazo** (alta): Android vibra con el PIN incorrecto.
+- **Cambio de configuración USB en el host** (a favor, no concluyente): por eso no
+  alcanza para cambiar el veredicto.
+
+`UnlockEvidence` (lógica pura) concentra esa matriz y `DiagnosticsReport` la incluye en
+el reporte, junto con la aclaración de que con la vibración del sistema desactivada
+"no vibró" no significa nada.
 
 ## Seguridad del PIN
 

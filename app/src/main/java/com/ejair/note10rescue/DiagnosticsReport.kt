@@ -23,7 +23,8 @@ object DiagnosticsReport {
         lastSequence: String,
         usbState: String,
         logLines: List<String>,
-        auditTrail: String = ""
+        auditTrail: String = "",
+        unlockEvidence: String = ""
     ): String {
         val included = if (logLines.size > MAX_LOG_LINES) logLines.takeLast(MAX_LOG_LINES) else logLines
         val omitted = logLines.size - included.size
@@ -37,6 +38,11 @@ object DiagnosticsReport {
             appendLine("intentos enviados (contador de esta sesión): $attempts")
             appendLine("último envío: $lastSequence")
             appendLine("estado USB observado: $usbState")
+            if (unlockEvidence.isNotBlank()) {
+                appendLine()
+                appendLine("--- desbloqueo (indicios y veredicto) ---")
+                appendLine(unlockEvidence.trimEnd())
+            }
             appendLine()
             appendLine("--- registro (${included.size} líneas${if (omitted > 0) ", $omitted omitidas" else ""}) ---")
             included.forEach { appendLine(it) }
