@@ -210,9 +210,23 @@ reports de 8 bytes) pero **no abre ni toca ningún dispositivo**. Un toque en OK
 recorre todo el pipeline —elegir dispositivo, preparar HID, tecla de despertar,
 secuencia, resumen, monitor USB, auditoría— y lo deja en el registro. Cada corrida se
 etiqueta `Prueba #N (no cuenta como intento)` y en la auditoría queda como
-`modo=PRUEBA_sin_envio`, así que **no consume intentos de desbloqueo** en el target.
+`transporte=simulado modo=PRUEBA_sin_envio`, así que **no consume intentos** en el target.
 
 Sirve para comprobar que la app está en condiciones antes de gastar un intento real.
+
+**El modo se decide al preparar el HID, no al enviar** (corregido en v1.0.9). El
+transporte es una propiedad del teclado preparado: si cambiás la casilla, el HID
+preparado se descarta y se avisa en el registro, porque ya no representa el modo pedido.
+Cada envío deja constancia de con qué transporte salió:
+
+```
+Envío #1 solicitado (transporte=USB)
+MODO REAL: los envíos van al Note10 y cuentan como intentos de desbloqueo
+```
+
+Antes de v1.0.9 el modo se leía de la casilla en el momento del envío: con el HID ya
+preparado en modo real, marcar "Modo de prueba" **escribía de verdad en el Note10** con
+la etiqueta de prueba y sin contar el intento (defecto detectado en campo el 2026-09-20).
 
 ## Envío rechazado (`result=-1`): no gasta un intento
 
@@ -268,8 +282,8 @@ contador vive en memoria: se reinicia cuando cerrás la app, no guarda nada.
 Verificado en este repositorio (salida de herramientas, no estimaciones):
 
 - `./gradlew clean test assembleDebug -PskipPin=true` → **BUILD SUCCESSFUL**.
-- **97 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
-  `AoaHidKeyboardTest` 35, `UnlockEvidenceTest` 14, `HidKeyboardReportsTest` 10,
+- **99 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
+  `AoaHidKeyboardTest` 37, `UnlockEvidenceTest` 14, `HidKeyboardReportsTest` 10,
   `HidKeycodesTest` 7, `UsbBusStateTest` 6, `PermissionPollTest` 5, `PinVaultTest` 5,
   `SimulatedTransportTest` 5, `AuditEntryTest` 4, `AoaErrorTest` 3, `DiagnosticsReportTest` 3.
 - **Sondeo del permiso USB** cubierto por tests: concedido al primer intento (no espera),
@@ -290,10 +304,10 @@ Verificado en este repositorio (salida de herramientas, no estimaciones):
 - Descriptor HID comparado byte a byte contra `scrcpy/app/src/hid/hid_keyboard.c`
   con las macros resueltas: **63 bytes, 0 diferencias**.
 - APK inspeccionado con `aapt2 dump badging` / `dump permissions`: paquete
-  `com.ejair.note10rescue`, `versionCode 9`, `versionName 1.0.8`, `minSdk 24`,
+  `com.ejair.note10rescue`, `versionCode 10`, `versionName 1.0.9`, `minSdk 24`,
   `targetSdk 34`, `uses-feature usb.host`, **cero permisos declarados** (sin `INTERNET`).
-- `sha256` del APK público publicado (v1.0.8):
-  `1bd621171144ef8a7806c86466e545c9dabf9175f677d6c4c2c368f8f7bc768c`.
+- `sha256` del APK público publicado (v1.0.9):
+  `24e3907fe9013e7485499158f5256a9ec79b9a276e7370c4cd9849bf4a2da727`.
 
 **Verificado contra el hardware real** (reporte de campo del 2026-09-20, host
 `SM-A366E` / Android 16, target `SAMSUNG_Android` VID `0x04E8` PID `0x6860`):
@@ -415,7 +429,8 @@ versión real que informar.
 | `AOA_PROTOCOL_UNSUPPORTED` | El dispositivo respondió protocolo < 2 (AOA1): no declara AOA2. Sin el checkbox, se detiene; con "Intentar HID igualmente" marcado, intenta el HID igual (un solo intento). |
 | `REGISTER_HID_FAILED` | Falló `ACCESSORY_REGISTER_HID` (54). Probá de nuevo o usá el fallback. |
 | `SET_DESCRIPTOR_FAILED` | Falló `SET_HID_REPORT_DESC` (56): el descriptor no se aceptó. |
-| `SEND_REPORT_FAILED` | Falló `ACCESSORY_SEND_HID_EVENT` (57) al mandar una tecla. |
+| `SEND_REPORT_FAILED` | Falló `ACCESSORY_SEND_HID_EVENT` (57) al mandar una tecla. Un transfer rechazado **no entrega ninguna tecla**, así que ese envío no cuenta como intento. |
+| `INTERNAL_ERROR` | Fallo inesperado del envío (no es del protocolo AOA): el detalle dice la excepción. Reportalo con el registro si se repite. |
 | `DEVICE_DISCONNECTED` | Se desconectó el Note10: se limpia la conexión; reconectá y repetí desde el paso 3. |
 | `HID_NOT_PREPARED` | Intentaste enviar teclas sin "HID preparado": tocá primero Preparar HID. |
 | `INVALID_PIN` | El campo PIN está vacío o tiene caracteres que no son dígitos. |
@@ -483,22 +498,22 @@ pin-local.properties             PIN embebido (versionado a propósito, ver arri
 
 ## APK
 
-`dist/note10-rescue-hid-1.0.8-debug.apk` — APK debug de v1.0.8 **sin PIN** (build
-público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 97 unit
+`dist/note10-rescue-hid-1.0.9-debug.apk` — APK debug de v1.0.9 **sin PIN** (build
+público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 99 unit
 tests en verde, descriptor idéntico a scrcpy, sin ningún permiso declarado).
-899.851 bytes.
+901.827 bytes.
 
 ```
-sha256  1bd621171144ef8a7806c86466e545c9dabf9175f677d6c4c2c368f8f7bc768c
+sha256  24e3907fe9013e7485499158f5256a9ec79b9a276e7370c4cd9849bf4a2da727
 ```
 
-`dist/note10-rescue-hid-1.0.8-pin-debug.apk` — el mismo código **con el PIN embebido**,
+`dist/note10-rescue-hid-1.0.9-pin-debug.apk` — el mismo código **con el PIN embebido**,
 publicado a pedido del dueño del dispositivo (ver más arriba). También está como asset
-del release v1.0.8 y en `pin-local.properties` (versionado a propósito).
-899.831 bytes.
+del release v1.0.9 y en `pin-local.properties` (versionado a propósito).
+901.839 bytes.
 
 ```
-sha256  141c9e3d26c98d19643c2cbc2a2d9bd937caeb4c34fbf5596094db378aac677d
+sha256  7681cd4e8315fc9eecd1f1aee42dec476300fc69b826257c84a753f311c3f72a
 ```
 
 Los APK de v1.0.7 a v1.0.0 quedan publicados sin
@@ -531,6 +546,30 @@ Los resultados de los tests quedan en `app/build/test-results/testDebugUnitTest/
 `app/build/reports/tests/testDebugUnitTest/index.html`.
 
 ## Cambios
+
+### v1.0.9
+
+Corrige un defecto **grave** del "Modo de prueba", encontrado en el registro de campo
+del 2026-09-20: el modo se leía de la casilla **en el momento del envío**, no del
+transporte con el que se había preparado el HID. Con el HID ya preparado en modo real,
+marcar "Modo de prueba" hacía que la app registrara `MODO DE PRUEBA: transporte
+simulado — no se abre ni se toca el Note10` y **escribiera de verdad en el Note10**
+(10 reports: 4 dígitos + ENTER), sin contarlo como intento. O sea: el "ensayo en seco"
+gastaba un intento real.
+
+- **El modo es una propiedad del teclado preparado** (`AoaHidKeyboard.simulated`): el
+  registro, la auditoría (`transporte=usb|simulado`) y el contador de intentos leen la
+  verdad del transporte, no la casilla.
+- **Cambiar la casilla descarta el HID preparado** y avisa: el próximo envío lo vuelve a
+  preparar con el transporte correcto. Un "modo de prueba" ya no puede escribir.
+- **Nada falla en silencio**: `catch (Throwable)` en el envío (antes, una excepción que no
+  fuera `AoaException` moría dentro del executor y el envío no dejaba ni una línea) y
+  **watchdog de 15 s** que avisa si un envío no deja resultado.
+- Cada toque deja constancia: `Envío #N solicitado (transporte=USB|simulado)`.
+- La casilla loguea distinto de un envío (`Casilla "Modo de prueba" ACTIVADA/DESACTIVADA`):
+  antes el log de la casilla se confundía con un envío sin reports.
+- Error nuevo `INTERNAL_ERROR` para fallos inesperados del envío.
+- 2 tests nuevos (99 en total, 0 fallas).
 
 ### v1.0.8
 

@@ -156,6 +156,26 @@ llegar), así que `PermissionPoll` sondea `UsbManager.hasPermission()` cada 500 
 API 31+ para que el sistema agregue los extras). El timeout tiene su propio código
 (`USB_PERMISSION_TIMEOUT`) para no reportar como "denegado" algo que nunca se preguntó.
 
+## Modo de prueba (v1.0.9): el modo es del transporte, no de la casilla
+
+Tercer hallazgo del mismo ensayo, y el más peligroso: el modo (real/simulado) se leía de
+la casilla **en el momento del envío**, pero el transporte se elige al **preparar** el
+HID. Con el HID preparado en modo real y la casilla marcada después, la app registraba
+`MODO DE PRUEBA: transporte simulado — no se abre ni se toca el Note10` y **escribía de
+verdad en el target** (10 reports: 4 dígitos + ENTER), sin contarlo como intento. Un
+"ensayo en seco" gastaba un intento real y la auditoría lo etiquetaba como prueba.
+
+Regla: **el modo tiene que ser una propiedad del objeto que envía** (`AoaHidKeyboard`
+recibe `simulated`), y el log, la auditoría y el contador leen de ahí. Cambiar la casilla
+descarta el HID preparado, porque ya no representa el modo pedido.
+
+Y una segunda regla del mismo episodio: **nada puede fallar en silencio**. El envío sólo
+capturaba `AoaException`; cualquier otra excepción moría dentro del executor sin dejar
+una línea, y el usuario no podía saber si se había mandado algo. Ahora hay
+`catch (Throwable)` con `INTERNAL_ERROR` y un watchdog de 15 s que avisa si un envío no
+deja resultado. En una herramienta que gasta intentos irreversibles, el silencio es el
+peor comportamiento posible.
+
 ## Seguridad del PIN
 
 `numberPassword`, sin SharedPreferences/DB/archivo, `saveEnabled=false`, sin
