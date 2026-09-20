@@ -4,8 +4,8 @@
 #
 #   cp pin-local.properties.example pin-local.properties
 #
-# Formato:
-#   pin=0000
+# Formato (4 dígitos, sin espacios):
+#   pin=<tus cuatro dígitos>
 #
 # El build lo lee y lo embebe OFUSCADO (XOR 0x5A + hex) en el APK, para que no
 # aparezca como texto plano en el .dex. Es ofuscación, no criptografía fuerte:

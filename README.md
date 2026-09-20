@@ -110,8 +110,9 @@ APK publicado. El build lo lee de un archivo local que **está en .gitignore**:
 
 ```bash
 cp pin-local.properties.example pin-local.properties
-# editar pin-local.properties ->  pin=1234
+# editar pin-local.properties ->  pin=<tus 4 dígitos>
 ./gradlew assembleDebug
+# o, directo:  ./build-privado.sh
 ```
 
 - Con ese archivo, Gradle embebe el PIN **ofuscado** (XOR 0x5A + hex) en el APK y
