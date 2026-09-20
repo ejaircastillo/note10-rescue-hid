@@ -135,6 +135,13 @@
             android:text="@string/wake_key_first"
             android:textSize="12sp" />
 
+        <CheckBox
+            android:id="@+id/cbSimulated"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/sim_mode"
+            android:textSize="12sp" />
+
         <Button
             android:id="@+id/btnOk"
             android:layout_width="match_parent"

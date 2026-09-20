@@ -51,9 +51,11 @@ object AuditEntry {
     fun attempt(
         number: Int,
         pinSource: String,
-        stats: AoaHidKeyboard.SequenceStats
+        stats: AoaHidKeyboard.SequenceStats,
+        simulated: Boolean = false
     ): String = "INTENTO #$number resultado=ENVIADO origen=$pinSource dígitos=${stats.digits} " +
-        "reports=${stats.reports} duración=${stats.durationMs}ms teclaDespertar=${stats.wakeKeyFirst}"
+        "reports=${stats.reports} duración=${stats.durationMs}ms teclaDespertar=${stats.wakeKeyFirst}" +
+        if (simulated) " modo=PRUEBA_sin_envio" else ""
 
     fun failure(number: Int, error: AoaError, detail: String): String =
         "INTENTO #$number resultado=ERROR codigo=${error.code} detalle=$detail"

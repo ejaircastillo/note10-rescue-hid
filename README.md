@@ -133,6 +133,18 @@ Advertencias concretas:
 - El PIN nunca se muestra, nunca se registra en el log ni en la auditoría, y se
   descarta al cerrar la app (nada de SharedPreferences, archivos ni red).
 
+## Modo de prueba (validar el flujo sin gastar intentos)
+
+Con la casilla **"Modo de prueba"** marcada, la app usa un transporte simulado que
+responde exactamente como un Android con AOA2 (protocolo 2, descriptor aceptado,
+reports de 8 bytes) pero **no abre ni toca ningún dispositivo**. Un toque en OK
+recorre todo el pipeline —elegir dispositivo, preparar HID, tecla de despertar,
+secuencia, resumen, monitor USB, auditoría— y lo deja en el registro. Cada corrida se
+etiqueta `Prueba #N (no cuenta como intento)` y en la auditoría queda como
+`modo=PRUEBA_sin_envio`, así que **no consume intentos de desbloqueo** en el target.
+
+Sirve para comprobar que la app está en condiciones antes de gastar un intento real.
+
 ## Reportar un problema
 
 Dos botones abajo del registro:
@@ -160,19 +172,28 @@ contador vive en memoria: se reinicia cuando cerrás la app, no guarda nada.
 
 Verificado en este repositorio (salida de herramientas, no estimaciones):
 
-- `./gradlew clean test assembleDebug` → **BUILD SUCCESSFUL**.
-- **66 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
+- `./gradlew clean test assembleDebug -PskipPin=true` → **BUILD SUCCESSFUL**.
+- **71 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
   `AoaHidKeyboardTest` 31, `HidKeyboardReportsTest` 10, `HidKeycodesTest` 7,
-  `UsbBusStateTest` 6, `PinVaultTest` 5, `AuditEntryTest` 4, `DiagnosticsReportTest` 3.
+  `UsbBusStateTest` 6, `PinVaultTest` 5, `SimulatedTransportTest` 5, `AuditEntryTest` 4,
+  `DiagnosticsReportTest` 3.
+- El pipeline completo (GET_PROTOCOL → REGISTER_HID → SET_DESC → reports) se ejerce
+  contra `SimulatedTransport`, que responde igual que un Android con AOA2: 12 reports
+  para 4 dígitos con tecla de despertar, sin tocar ningún dispositivo.
 - Build privado verificado con un PIN real: el `.dex` **no** contiene el PIN en texto
   plano y **sí** la forma ofuscada; el APK público no contiene ninguna de las dos.
 - Descriptor HID comparado byte a byte contra `scrcpy/app/src/hid/hid_keyboard.c`
   con las macros resueltas: **63 bytes, 0 diferencias**.
 - APK inspeccionado con `aapt2 dump badging` / `dump permissions`: paquete
-  `com.ejair.note10rescue`, `versionCode 5`, `versionName 1.0.4`, `minSdk 24`,
+  `com.ejair.note10rescue`, `versionCode 6`, `versionName 1.0.5`, `minSdk 24`,
   `targetSdk 34`, `uses-feature usb.host`, **cero permisos declarados** (sin `INTERNET`).
-- `sha256` del APK público publicado (v1.0.4):
-  `866354b3f04fdd1afe42face0b613bca4b9ac5646657933541131e41bbcc3bda`.
+- `sha256` del APK público publicado (v1.0.5):
+  `81ad47c286b248ad5e52696f98c0f031227649b9f8a7aa108a17613c94e8ffdf`.
+
+**No verificado físicamente**: la inyección real de teclas en el Note10 (requiere los
+dos teléfonos). Eso incluye el pipeline del botón OK contra hardware real. Para acortar
+esa distancia existe el **modo de prueba** (ver abajo), que lo ejercita todo salvo el
+USB físico.
 
 **No verificado** (requiere los dos teléfonos físicos, que no están disponibles
 para quien escribió este código):
@@ -320,6 +341,7 @@ app/src/main/java/com/ejair/note10rescue/
   DiagnosticsReport.kt     arma el reporte compartible (nunca incluye el PIN)
   PinVault.kt              PIN embebido del build privado (decodifica el XOR+hex)
   AuditTrail.kt            audit.log en almacenamiento privado + formato de auditoría
+  SimulatedTransport.kt    transporte simulado del modo de prueba (no toca el target)
   AoaProtocol.kt           51/54/55/56/57 y bmRequestType 0x40 / 0xC0
   AoaError.kt             códigos de error + AoaException
   ControlTransport.kt     interfaz de transporte (inyectable en tests)
@@ -332,31 +354,32 @@ app/src/test/java/com/ejair/note10rescue/
   DiagnosticsReportTest.kt el reporte compartible no filtra el PIN
   PinVaultTest.kt          formato del PIN embebido (ida y vuelta)
   AuditEntryTest.kt        líneas de auditoría sin filtrar el PIN
+  SimulatedTransportTest.kt el pipeline completo contra el transporte simulado
 pin-local.properties.example   plantilla del build privado (el real está en .gitignore)
 ```
 
 ## APK
 
-`dist/note10-rescue-hid-1.0.4-debug.apk` — APK debug de v1.0.4, compilado y verificado
-(`BUILD SUCCESSFUL`, 66 unit tests en verde, descriptor idéntico a scrcpy, sin ningún
-permiso declarado, **sin PIN embebido**: es el build público). 884.435 bytes.
+`dist/note10-rescue-hid-1.0.5-debug.apk` — APK debug de v1.0.5, compilado y verificado
+(`BUILD SUCCESSFUL`, 71 unit tests en verde, descriptor idéntico a scrcpy, sin ningún
+permiso declarado, **sin PIN embebido**: es el build público). 886.291 bytes.
 
 ```
-sha256  866354b3f04fdd1afe42face0b613bca4b9ac5646657933541131e41bbcc3bda
+sha256  81ad47c286b248ad5e52696f98c0f031227649b9f8a7aa108a17613c94e8ffdf
 ```
 
 El APK con el PIN embebido (build privado desde `pin-local.properties`, verificado
 también: 0 apariciones del PIN en texto plano en el `.dex`) **no se publica**: se
 compila localmente y se instala a mano.
 
-Los APK de v1.0.3, v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin cambios para
+Los APK de v1.0.4, v1.0.3, v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin cambios para
 trazabilidad. Al estar todos firmados con la misma clave de debug, las actualizaciones
 se instalan encima sin desinstalar.
 
 Instalación desde una PC con ADB:
 
 ```bash
-adb install -r dist/note10-rescue-hid-1.0.4-debug.apk
+adb install -r dist/note10-rescue-hid-1.0.5-debug.apk
 ```
 
 ## Build
@@ -377,6 +400,17 @@ Los resultados de los tests quedan en `app/build/test-results/testDebugUnitTest/
 `app/build/reports/tests/testDebugUnitTest/index.html`.
 
 ## Cambios
+
+### v1.0.5
+
+- **Modo de prueba**: casilla que recorre todo el pipeline con un transporte simulado
+  (responde como un dispositivo AOA2 real) sin abrir ni tocar el target, para validar
+  la app sin gastar intentos de desbloqueo. Las corridas quedan marcadas como
+  `PRUEBA_sin_envio` en la auditoría y **no** incrementan el contador de intentos.
+- `SimulatedTransport` + 5 tests nuevos (71 en total) que ejercitan el pipeline
+  completo contra ese transporte.
+- El registro avisa explícitamente antes de cada envío si es `MODO REAL` o
+  `MODO DE PRUEBA`.
 
 ### v1.0.4
 

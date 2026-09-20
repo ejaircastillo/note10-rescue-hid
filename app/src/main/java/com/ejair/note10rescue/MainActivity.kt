@@ -56,6 +56,7 @@ class MainActivity : Activity() {
     private lateinit var tvSummary: TextView
     private lateinit var tvAttempts: TextView
     private lateinit var cbWakeKey: CheckBox
+    private lateinit var cbSimulated: CheckBox
     private lateinit var btnOk: Button
     private lateinit var tvOkHint: TextView
     private lateinit var btnShareLog: Button
@@ -93,6 +94,7 @@ class MainActivity : Activity() {
     /** Copia del registro técnico en memoria, para poder compartirlo. Nunca tiene el PIN. */
     private val logLines = mutableListOf<String>()
     private var attemptsSent = 0
+    private var simulatedRuns = 0
     private var lastSequenceSummary = "—"
     private var lastUsbState = "—"
     private var appVersion = "?"
@@ -122,6 +124,7 @@ class MainActivity : Activity() {
         tvSummary = findViewById(R.id.tvSummary)
         tvAttempts = findViewById(R.id.tvAttempts)
         cbWakeKey = findViewById(R.id.cbWakeKey)
+        cbSimulated = findViewById(R.id.cbSimulated)
         btnOk = findViewById(R.id.btnOk)
         tvOkHint = findViewById(R.id.tvOkHint)
         btnShareLog = findViewById(R.id.btnShareLog)
@@ -166,6 +169,9 @@ class MainActivity : Activity() {
         btnShareLog.setOnClickListener { shareLog() }
         btnCopyLog.setOnClickListener { copyLog() }
         btnOk.setOnClickListener { onOkPressed() }
+        cbSimulated.setOnCheckedChangeListener { _, checked ->
+            log(getString(if (checked) R.string.sim_mode_on else R.string.sim_mode_off))
+        }
 
         audit = AuditTrail(this)
 
@@ -303,14 +309,17 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------------- AOA
 
     private fun prepareHid() {
+        val simulated = cbSimulated.isChecked
         val info = selected
-        if (info == null) {
-            onAoaError(AoaException(AoaError.NO_USB_DEVICE, "ningún dispositivo seleccionado"))
-            return
-        }
-        if (usb.hasPermission(info.device).not()) {
-            onAoaError(AoaException(AoaError.USB_PERMISSION_DENIED, "device=${info.deviceName}"))
-            return
+        if (!simulated) {
+            if (info == null) {
+                onAoaError(AoaException(AoaError.NO_USB_DEVICE, "ningún dispositivo seleccionado"))
+                return
+            }
+            if (usb.hasPermission(info.device).not()) {
+                onAoaError(AoaException(AoaError.USB_PERMISSION_DENIED, "device=${info.deviceName}"))
+                return
+            }
         }
         val existing = keyboard
         if (existing != null && existing.isRegistered) {
@@ -326,11 +335,16 @@ class MainActivity : Activity() {
 
         io.execute {
             try {
-                val conn = connection ?: usb.open(info.device).also { opened ->
-                    connection = opened
-                    main.post { log("Connection opened") }
+                val aoa = if (simulated) {
+                    main.post { log(getString(R.string.sim_mode_on)) }
+                    AoaHidKeyboard(SimulatedTransport())
+                } else {
+                    val conn = connection ?: usb.open(info!!.device).also { opened ->
+                        connection = opened
+                        main.post { log("Connection opened") }
+                    }
+                    AoaHidKeyboard(UsbControlTransport(conn))
                 }
-                val aoa = AoaHidKeyboard(UsbControlTransport(conn))
                 aoa.onEvent = { line -> main.post { log(line) } }
                 // GET_PROTOCOL -> REGISTER_HID -> SET_HID_REPORT_DESC (sin loops).
                 val version = aoa.prepare(forceIfUnsupported = force)
@@ -413,6 +427,12 @@ class MainActivity : Activity() {
 
         autoSendPending = true
         log(getString(R.string.msg_auto_preparing))
+        if (cbSimulated.isChecked) {
+            // Modo de prueba: no hace falta dispositivo ni permiso.
+            autoSendPending = false
+            prepareHid()
+            return
+        }
         val info = selected ?: autoSelectDevice()
         if (info == null) {
             autoSendPending = false
@@ -486,20 +506,28 @@ class MainActivity : Activity() {
         }
 
         startCooldown()
-        val number = attemptsSent + 1
+        val simulated = cbSimulated.isChecked
+        val number = if (simulated) simulatedRuns + 1 else attemptsSent + 1
         val wakeKeyFirst = cbWakeKey.isChecked
+        log(getString(if (simulated) R.string.sim_mode_on else R.string.sim_mode_off))
         io.execute {
             try {
                 // Exactamente UNA secuencia: dígitos + ENTER (+ TAB opcional antes).
                 val stats = aoa.sendPinAndEnter(pin, wakeKeyFirst = wakeKeyFirst)
-                audit.append(AuditEntry.attempt(number, pinSource, stats))
+                audit.append(AuditEntry.attempt(number, pinSource, stats, simulated))
                 main.post {
-                    attemptsSent = number
-                    updateAttempts()
+                    if (simulated) simulatedRuns = number else attemptsSent = number
+                    if (!simulated) updateAttempts()
                     lastSequenceSummary = stats.summary()
                     tvSummary.text = getString(R.string.summary_fmt, lastSequenceSummary)
                     setStatus(getString(R.string.status_ready))
-                    log("Envío #$number (PIN $pinSource): ${stats.summary()}")
+                    log(
+                        if (simulated) {
+                            "Prueba #$number (no cuenta como intento): ${stats.summary()}"
+                        } else {
+                            "Envío #$number (PIN $pinSource): ${stats.summary()}"
+                        }
+                    )
                     log("Esperá 3-5 s antes de concluir nada (el desbloqueo puede demorar)")
                 }
                 watchTargetUsbState()

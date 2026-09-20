@@ -102,6 +102,9 @@ fallido).
   formato puro y testeable.
 - `DeviceSnapshot` + `UsbDeviceManager.describeSnapshots()` / `diffSnapshots()` —
   comparación del estado del bus USB antes/después de un envío.
+- `SimulatedTransport` — transporte falso del **modo de prueba**: responde como un
+  Android con AOA2 (protocolo 2, descriptor aceptado, reports de 8) sin tocar ningún
+  dispositivo, para ejercitar el pipeline completo sin gastar intentos de desbloqueo.
 
 ## Seguridad del PIN
 
@@ -146,7 +149,8 @@ Detalle del entorno de build y de lo verificado vs. no verificado en `README.md`
 
 ## Estado
 
-v1.0.4: implementado y compilado (`BUILD SUCCESSFUL`) con 66 unit tests en verde,
-descriptor idéntico a scrcpy (0 diferencias byte a byte) y APK público sin permisos ni
-PIN. La verificación end-to-end con los dos teléfonos físicos queda pendiente y está
-listada en la sección "Estado de verificación y limitaciones" del `README.md`.
+v1.0.5: implementado y compilado (`BUILD SUCCESSFUL`) con 71 unit tests en verde
+—incluido el pipeline completo contra `SimulatedTransport`—, descriptor idéntico a
+scrcpy (0 diferencias byte a byte) y APK público sin permisos ni PIN. La verificación
+física de la inyección en los dos teléfonos queda pendiente y está listada en la
+sección "Estado de verificación y limitaciones" del `README.md`.
