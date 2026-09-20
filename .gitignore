@@ -9,8 +9,8 @@ local.properties
 .cxx
 build_output.txt
 
-# PIN embebido para el build PRIVADO: nunca se versiona ni se publica.
-pin-local.properties
+# El PIN embebido está publicado a pedido del dueño del dispositivo (ver README).
+# No se ignora: pin-local.properties se versiona a propósito.
 
-# APK del build privado (con PIN embebido): nunca se versiona.
+# Salida local del build privado (artifact de trabajo).
 dist-privado/

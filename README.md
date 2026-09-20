@@ -101,37 +101,35 @@ antes). Si el HID ya está preparado, envía directo. Después queda el mismo bl
 
 El PIN que usa sale de esta precedencia:
 
-1. **PIN embebido en el build** (build privado, ver abajo), o
+1. **PIN embebido en el build** (ver abajo), o
 2. el que escribas en el campo PIN (botón *ENVIAR PIN UNA VEZ*).
 
-### PIN embebido: cómo se compila el APK privado
+### PIN embebido: cómo se compila el APK
 
-El repositorio es público, así que el PIN **no** puede estar en el código ni en el
-APK publicado. El build lo lee de un archivo local que **está en .gitignore**:
+El PIN vive en `pin-local.properties` y **está publicado en este repositorio a pedido
+del dueño del dispositivo** (es el PIN de un Note10 viejo, de pantalla rota, que no se
+reutiliza en ningún otro servicio). Cualquiera puede leerlo y extraerlo del APK: es una
+decisión explícita del dueño, no un descuido.
 
 ```bash
-cp pin-local.properties.example pin-local.properties
-# editar pin-local.properties ->  pin=<tus 4 dígitos>
-./gradlew assembleDebug
-# o, directo:  ./build-privado.sh
+./gradlew assembleDebug            # APK CON el PIN embebido (por defecto)
+./gradlew assembleDebug -PskipPin=true   # APK SIN PIN (build público)
+./build-privado.sh                 # compila, copia a dist-privado/ y calcula sha256
 ```
 
-- Con ese archivo, Gradle embebe el PIN **ofuscado** (XOR 0x5A + hex) en el APK y
-  avisa por consola: `PIN embebido de N dígitos -> APK PRIVADO, no publicar`.
-- Sin ese archivo (o sea, en cualquier clon del repo), el campo queda vacío, el
-  botón OK avisa que no hay PIN y **el APK no lleva ningún PIN**.
-- Si el archivo existe pero querés compilar el APK **público** (sin PIN):
-  `./gradlew assembleDebug -PskipPin=true`.
+- El PIN se embebe **ofuscado** (XOR 0x5A + hex): no aparece como texto plano en el
+  `.dex`, pero es recuperable en un minuto (la ofuscación está documentada acá mismo).
+- El APK con PIN está publicado como asset del release
+  (`note10-rescue-hid-<versión>-pin-debug.apk`) y también en `dist/`.
+- El PIN nunca se muestra en la app, nunca se registra en el log ni en la auditoría.
 
-Advertencias concretas:
+Advertencias que siguen valiendo:
 
-- La ofuscación evita que aparezca como texto plano en el `.dex`; **no es
-  criptografía**. Quien tenga ese APK puede recuperarlo. Por eso ese APK **no se
-  publica ni se comparte**, y conviene que el PIN no sea el mismo que usás en otros
-  equipos, cuentas o tarjetas.
-- `pin-local.properties` nunca se versiona (verificado: está en `.gitignore`).
-- El PIN nunca se muestra, nunca se registra en el log ni en la auditoría, y se
-  descarta al cerrar la app (nada de SharedPreferences, archivos ni red).
+- Si algún día querés dejar de exponerlo, hay que **cambiar el PIN en el teléfono** y
+  reescribir el historial del repo: mientras el repositorio sea público, el valor queda
+  en los commits viejos, en las copias y en los mirrors.
+- Como la pantalla del Note10 está rota, hoy **no podés cambiar el PIN** desde el
+  equipo: eso recién es posible después de desbloquearlo.
 
 ## Modo de prueba (validar el flujo sin gastar intentos)
 
@@ -355,31 +353,37 @@ app/src/test/java/com/ejair/note10rescue/
   PinVaultTest.kt          formato del PIN embebido (ida y vuelta)
   AuditEntryTest.kt        líneas de auditoría sin filtrar el PIN
   SimulatedTransportTest.kt el pipeline completo contra el transporte simulado
-pin-local.properties.example   plantilla del build privado (el real está en .gitignore)
+pin-local.properties             PIN embebido (versionado a propósito, ver arriba)
 ```
 
 ## APK
 
-`dist/note10-rescue-hid-1.0.5-debug.apk` — APK debug de v1.0.5, compilado y verificado
-(`BUILD SUCCESSFUL`, 71 unit tests en verde, descriptor idéntico a scrcpy, sin ningún
-permiso declarado, **sin PIN embebido**: es el build público). 886.291 bytes.
+`dist/note10-rescue-hid-1.0.5-debug.apk` — APK debug de v1.0.5 **sin PIN** (build
+público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 71 unit
+tests en verde, descriptor idéntico a scrcpy, sin ningún permiso declarado).
+886.291 bytes.
 
 ```
 sha256  81ad47c286b248ad5e52696f98c0f031227649b9f8a7aa108a17613c94e8ffdf
 ```
 
-El APK con el PIN embebido (build privado desde `pin-local.properties`, verificado
-también: 0 apariciones del PIN en texto plano en el `.dex`) **no se publica**: se
-compila localmente y se instala a mano.
+`dist/note10-rescue-hid-1.0.5-pin-debug.apk` — el mismo código **con el PIN embebido**,
+publicado a pedido del dueño del dispositivo (ver más arriba). También está como asset
+del release v1.0.5 y en `pin-local.properties` (versionado a propósito).
+
+```
+sha256  ac52434f9fddd93896a307b0a90036b4381146e48b252088eb3721f62c507014
+```
 
 Los APK de v1.0.4, v1.0.3, v1.0.2, v1.0.1 y v1.0.0 quedan publicados sin cambios para
-trazabilidad. Al estar todos firmados con la misma clave de debug, las actualizaciones
-se instalan encima sin desinstalar.
+trazabilidad (ninguno lleva PIN). Todos están firmados con la misma clave de debug, así
+que las actualizaciones se instalan encima sin desinstalar.
 
 Instalación desde una PC con ADB:
 
 ```bash
-adb install -r dist/note10-rescue-hid-1.0.5-debug.apk
+adb install -r dist/note10-rescue-hid-1.0.5-pin-debug.apk    # con PIN embebido
+adb install -r dist/note10-rescue-hid-1.0.5-debug.apk        # sin PIN
 ```
 
 ## Build

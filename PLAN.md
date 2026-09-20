@@ -96,8 +96,9 @@ fallido).
 - `AoaProtocol` / `AoaError` / `AoaException` — constantes y errores con código.
 - `DiagnosticsReport` — arma el reporte técnico que el usuario comparte o copia
   (puro, testeable; nunca incluye el PIN).
-- `PinVault` — decodifica el PIN embebido del build privado (XOR 0x5A + hex). El valor
-  llega por `BuildConfig`, generado desde `pin-local.properties` (no versionado).
+- `PinVault` — decodifica el PIN embebido (XOR 0x5A + hex). El valor llega por
+  `BuildConfig`, generado desde `pin-local.properties` (versionado a propósito por
+  decisión del dueño del equipo).
 - `AuditTrail` / `AuditEntry` — bitácora `audit.log` en `filesDir` (sin permisos) y su
   formato puro y testeable.
 - `DeviceSnapshot` + `UsbDeviceManager.describeSnapshots()` / `diffSnapshots()` —
@@ -133,10 +134,10 @@ teclas). Botón "ENVIAR PIN UNA VEZ" → una secuencia, luego bloqueo de 10 s.
   secuencia, con el cooldown de 10 s. Sin loops, sin reintentos automáticos. Habilitado
   desde el arranque (v1.0.4: antes quedaba deshabilitado hasta preparar el HID y el
   pipeline era inalcanzable).
-- PIN embebido **opcional**: `pin-local.properties` (en `.gitignore`) →
-  `buildConfigField` ofuscado (XOR 0x5A + hex, ver `PinVault`). Sin ese archivo el
-  campo queda vacío y el APK público no lleva ningún PIN. El APK con PIN embebido es
-  privado: no se publica ni se comparte.
+- PIN embebido: `pin-local.properties` (versionado a propósito) → `buildConfigField`
+  ofuscado (XOR 0x5A + hex, ver `PinVault`). `-PskipPin=true` compila el APK público sin
+  PIN; el APK con PIN se publica como asset del release y en
+  `dist/note10-rescue-hid-<versión>-pin-debug.apk`.
 - Auditoría: `AuditTrail` escribe `audit.log` en `filesDir` (sin permisos) con origen
   del PIN, dígitos, reports, duración, resultado y observaciones USB; el reporte
   compartible la incluye. Nunca el PIN ni los keycodes.
