@@ -122,6 +122,37 @@ Si te quedás en `USB_PERMISSION_TIMEOUT`: desbloqueá el teléfono host, mirá 
 (el diálogo tiene que estar ahí), tocá **OK** de nuevo y aceptá. Si nada, desconectá y
 reconectá el cable: el permiso se pide de nuevo en la conexión siguiente.
 
+## Sonda MTP: saber si se desbloqueó **sin una PC** (v1.0.10)
+
+Android sólo expone el almacenamiento por MTP con el equipo **desbloqueado** — es el
+motivo por el que una PC no ve los archivos de un teléfono bloqueado. Eso hace de
+`GetStorageIDs` el único indicio **objetivo** de desbloqueo que existe, y se puede
+consultar por el **mismo cable USB-C ↔ USB-C** del HID: no hace falta una PC ni otro
+cable.
+
+Botón **"Comprobar desbloqueo por USB (sonda MTP, sin PC)"**:
+
+```
+Sonda MTP: preguntando al Note10 cuántos almacenamientos expone (no gasta intentos)…
+MTP: el Note10 expone 2 almacenamiento(s) → ESTÁ DESBLOQUEADO
+```
+
+o
+
+```
+MTP: el Note10 no expone ningún almacenamiento (GetStorageIDs devolvió 0 almacenamientos) → SIGUE BLOQUEADO
+```
+
+El resultado entra solo en el bloque de desbloqueo del reporte (indicio `MTP`, el
+decisivo: el veredicto pasa a `CONFIRMADO` o `NO DESBLOQUEADO`). **No manda ninguna
+tecla**, así que no gasta intentos.
+
+Detalles: reclama la interfaz MTP del target (clase 6, subclase 1) y usa sus endpoints
+bulk —los control transfers del HID van por EP0, así que conviven—, corre
+`GetDeviceInfo` → `OpenSession` → `GetStorageIDs` → `CloseSession`, y suelta la
+interfaz al terminar. Si el Note10 está en "sólo cargar" (sin interfaz MTP), el error es
+`MTP_INTERFACE_NOT_FOUND`: hay que poner **"Transferir archivos"** en *Usar USB para*.
+
 ## Veredicto de desbloqueo (¿entró o no?)
 
 El protocolo AOA-HID es **unidireccional**: la app manda teclas y no recibe ninguna
@@ -282,10 +313,15 @@ contador vive en memoria: se reinicia cuando cerrás la app, no guarda nada.
 Verificado en este repositorio (salida de herramientas, no estimaciones):
 
 - `./gradlew clean test assembleDebug -PskipPin=true` → **BUILD SUCCESSFUL**.
-- **99 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
-  `AoaHidKeyboardTest` 37, `UnlockEvidenceTest` 14, `HidKeyboardReportsTest` 10,
-  `HidKeycodesTest` 7, `UsbBusStateTest` 6, `PermissionPollTest` 5, `PinVaultTest` 5,
-  `SimulatedTransportTest` 5, `AuditEntryTest` 4, `AoaErrorTest` 3, `DiagnosticsReportTest` 3.
+- **111 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
+  `AoaHidKeyboardTest` 37, `UnlockEvidenceTest` 14, `MtpProbeTest` 12,
+  `HidKeyboardReportsTest` 10, `HidKeycodesTest` 7, `UsbBusStateTest` 6,
+  `PermissionPollTest` 5, `PinVaultTest` 5, `SimulatedTransportTest` 5, `AuditEntryTest` 4,
+  `AoaErrorTest` 3, `DiagnosticsReportTest` 3.
+- **Sonda MTP** cubierta por tests: contenedores PIMA (longitud/tipo/código/transacción en
+  little-endian), contenedor partido en dos transferencias, `Unlocked(n)` con
+  almacenamientos, `Locked` con 0 almacenamientos y con `AccessDenied`, e
+  `Inconclusive` cuando el target no responde o no se puede escribir en el bulk OUT.
 - **Sondeo del permiso USB** cubierto por tests: concedido al primer intento (no espera),
   concedido en el sondeo 3, concedido justo en el último sondeo, agotamiento del tiempo
   sin permiso y aviso de progreso para el registro.
@@ -304,10 +340,10 @@ Verificado en este repositorio (salida de herramientas, no estimaciones):
 - Descriptor HID comparado byte a byte contra `scrcpy/app/src/hid/hid_keyboard.c`
   con las macros resueltas: **63 bytes, 0 diferencias**.
 - APK inspeccionado con `aapt2 dump badging` / `dump permissions`: paquete
-  `com.ejair.note10rescue`, `versionCode 10`, `versionName 1.0.9`, `minSdk 24`,
+  `com.ejair.note10rescue`, `versionCode 11`, `versionName 1.0.10`, `minSdk 24`,
   `targetSdk 34`, `uses-feature usb.host`, **cero permisos declarados** (sin `INTERNET`).
-- `sha256` del APK público publicado (v1.0.9):
-  `24e3907fe9013e7485499158f5256a9ec79b9a276e7370c4cd9849bf4a2da727`.
+- `sha256` del APK público publicado (v1.0.10):
+  `2643e9a1ef1d3c0188dbcde6c271e1063f7869e2a2c0dc81b2998c9400a631f2`.
 
 **Verificado contra el hardware real** (reporte de campo del 2026-09-20, host
 `SM-A366E` / Android 16, target `SAMSUNG_Android` VID `0x04E8` PID `0x6860`):
@@ -478,6 +514,8 @@ app/src/main/java/com/ejair/note10rescue/
   SimulatedTransport.kt    transporte simulado del modo de prueba (no toca el target)
   UnlockEvidence.kt        indicios de desbloqueo + veredicto (puro, testeable)
   PermissionPoll.kt        sondeo del permiso USB (puro, testeable)
+  MtpProbe.kt              sonda MTP: contenedores PIMA + flujo GetStorageIDs (puro)
+  UsbMtpChannel.kt         canal MTP real: claimInterface + bulkTransfer
   AoaProtocol.kt           51/54/55/56/57 y bmRequestType 0x40 / 0xC0
   AoaError.kt             códigos de error + AoaException
   ControlTransport.kt     interfaz de transporte (inyectable en tests)
@@ -493,27 +531,28 @@ app/src/test/java/com/ejair/note10rescue/
   SimulatedTransportTest.kt el pipeline completo contra el transporte simulado
   UnlockEvidenceTest.kt    matriz del veredicto de desbloqueo y sus límites
   PermissionPollTest.kt    sondeo del permiso USB + códigos de error
+  MtpProbeTest.kt          contenedores MTP y veredicto de la sonda
 pin-local.properties             PIN embebido (versionado a propósito, ver arriba)
 ```
 
 ## APK
 
-`dist/note10-rescue-hid-1.0.9-debug.apk` — APK debug de v1.0.9 **sin PIN** (build
-público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 99 unit
+`dist/note10-rescue-hid-1.0.10-debug.apk` — APK debug de v1.0.10 **sin PIN** (build
+público con `-PskipPin=true`), compilado y verificado (`BUILD SUCCESSFUL`, 111 unit
 tests en verde, descriptor idéntico a scrcpy, sin ningún permiso declarado).
-901.827 bytes.
+912.147 bytes.
 
 ```
-sha256  24e3907fe9013e7485499158f5256a9ec79b9a276e7370c4cd9849bf4a2da727
+sha256  2643e9a1ef1d3c0188dbcde6c271e1063f7869e2a2c0dc81b2998c9400a631f2
 ```
 
-`dist/note10-rescue-hid-1.0.9-pin-debug.apk` — el mismo código **con el PIN embebido**,
+`dist/note10-rescue-hid-1.0.10-pin-debug.apk` — el mismo código **con el PIN embebido**,
 publicado a pedido del dueño del dispositivo (ver más arriba). También está como asset
-del release v1.0.9 y en `pin-local.properties` (versionado a propósito).
-901.839 bytes.
+del release v1.0.10 y en `pin-local.properties` (versionado a propósito).
+912.119 bytes.
 
 ```
-sha256  7681cd4e8315fc9eecd1f1aee42dec476300fc69b826257c84a753f311c3f72a
+sha256  c83169b64e6cde3ff98ca4f0cf7ee9f666118ec587f380c005eaf697841b3c63
 ```
 
 Los APK de v1.0.7 a v1.0.0 quedan publicados sin
@@ -546,6 +585,27 @@ Los resultados de los tests quedan en `app/build/test-results/testDebugUnitTest/
 `app/build/reports/tests/testDebugUnitTest/index.html`.
 
 ## Cambios
+
+### v1.0.10
+
+La pregunta "¿se desbloqueó?" ahora se puede responder **sin una PC**, por el mismo cable
+del HID: sonda MTP.
+
+- **Botón "Comprobar desbloqueo por USB (sonda MTP, sin PC)"**: Android sólo expone el
+  almacenamiento por MTP con el equipo desbloqueado, así que `GetStorageIDs` es el único
+  indicio **objetivo** de desbloqueo. Devuelve almacenamientos ⇒ `ESTÁ DESBLOQUEADO`;
+  devuelve 0 o `AccessDenied` ⇒ `SIGUE BLOQUEADO`.
+- El resultado se integra al bloque de desbloqueo del reporte (indicio `MTP`, el
+  decisivo) y **no gasta intentos**: no manda ninguna tecla.
+- `MtpProbe` implementa los contenedores PIMA 15740 (longitud, tipo, código,
+  transaction id, todo little-endian) y el flujo
+  `GetDeviceInfo` → `OpenSession` → `GetStorageIDs` → `CloseSession`, con lectura que
+  junta contenedores partidos entre varias transferencias.
+- `UsbMtpChannel` reclama la interfaz clase 6 y usa sus endpoints bulk, reutilizando la
+  conexión del HID (los control transfers van por EP0 y no chocan).
+- Errores nuevos: `MTP_INTERFACE_NOT_FOUND` (target en "sólo cargar") y
+  `MTP_CLAIM_FAILED`.
+- 12 tests nuevos (111 en total, 0 fallas).
 
 ### v1.0.9
 

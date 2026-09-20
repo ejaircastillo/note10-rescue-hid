@@ -176,6 +176,25 @@ una línea, y el usuario no podía saber si se había mandado algo. Ahora hay
 deja resultado. En una herramienta que gasta intentos irreversibles, el silencio es el
 peor comportamiento posible.
 
+## Sonda MTP (v1.0.10): la única confirmación objetiva posible
+
+El usuario no tiene otro cable con datos que el USB-C ↔ USB-C entre los dos teléfonos, así
+que la comprobación "¿la PC ve el almacenamiento?" (el indicio decisivo de v1.0.7) no
+estaba disponible. Pero el indicio no necesita una PC: **Android sólo expone el
+almacenamiento por MTP con el equipo desbloqueado**, así que preguntarle al target por
+`GetStorageIDs` responde lo mismo, y se puede hacer por el cable que ya está conectado.
+
+Implementación: `MtpProbe` (contenedores PIMA 15740 y el flujo
+`GetDeviceInfo` → `OpenSession` → `GetStorageIDs` → `CloseSession`, lógica pura y
+testeable) y `UsbMtpChannel` (reclama la interfaz clase 6 y usa sus endpoints bulk,
+reutilizando la conexión del HID: los control transfers de AOA van por EP0 y no chocan con
+los bulk de MTP). Un contenedor puede llegar partido en varias transferencias, así que la
+lectura usa la longitud declarada para juntarlo.
+
+Resultado: `Unlocked(n)` ⇒ el reporte pasa a `CONFIRMADO`; `Locked` (0 almacenamientos o
+`AccessDenied`) ⇒ `NO DESBLOQUEADO`; cualquier otra cosa ⇒ `Inconclusive` con el motivo.
+No manda ninguna tecla, así que no gasta intentos.
+
 ## Seguridad del PIN
 
 `numberPassword`, sin SharedPreferences/DB/archivo, `saveEnabled=false`, sin
