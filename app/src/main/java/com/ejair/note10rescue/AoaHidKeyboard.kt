@@ -42,11 +42,28 @@ class AoaHidKeyboard(
         private const val MAX_RECORDED_TRANSFERS = 64
     }
 
+    /** Resultado de una secuencia, para mostrarlo sin exponer los dígitos. */
+    data class SequenceStats(
+        val digits: Int,
+        val reports: Int,
+        val durationMs: Long,
+        val wakeKeyFirst: Boolean
+    ) {
+        fun summary(): String =
+            "$digits dígitos, $reports reports OK, ${durationMs}ms" +
+                if (wakeKeyFirst) " (con tecla de despertar previa)" else ""
+    }
+
     /** Callback de registro técnico (nunca incluye contenido sensible). */
     var onEvent: ((String) -> Unit)? = null
 
     private val recorded = mutableListOf<TransferResult>()
     private var registered = false
+    private var reportsSent = 0
+
+    /** Última secuencia enviada (sin dígitos: sólo cantidades y tiempos). */
+    var lastSequenceStats: SequenceStats? = null
+        private set
 
     var lastProtocolVersion: Int = -1
         private set
@@ -203,6 +220,7 @@ class AoaHidKeyboard(
         if (!result.ok) {
             throw AoaException(AoaError.SEND_REPORT_FAILED, result.technicalDetail())
         }
+        reportsSent++
     }
 
     /** Una pulsación completa: KEY DOWN -> KEY RELEASE -> pausa entre eventos. */
@@ -218,10 +236,15 @@ class AoaHidKeyboard(
      * Envía la secuencia de [pin] (sólo dígitos) seguida de ENTER.
      * Una sola pasada, sin reintentos.
      *
-     * @return la cantidad de dígitos enviados (nunca los dígitos).
+     * @param wakeKeyFirst opción manual explícita: manda una TAB antes del PIN.
+     *   Sirve para el caso en que la pantalla estaba apagada, porque Android suele
+     *   consumir el primer evento de teclado para despertarla (y entonces el PIN
+     *   entraría corrido, sin el primer dígito). No es un reintento ni una
+     *   secuencia automática: lo decide el usuario con la casilla.
+     * @return [SequenceStats] con cantidades y duración (nunca los dígitos).
      */
     @Synchronized
-    fun sendPinAndEnter(pin: CharSequence): Int {
+    fun sendPinAndEnter(pin: CharSequence, wakeKeyFirst: Boolean = false): SequenceStats {
         val digits = pin.toString()
         if (digits.isEmpty()) {
             throw AoaException(AoaError.INVALID_PIN, "vacío")
@@ -230,13 +253,30 @@ class AoaHidKeyboard(
             throw AoaException(AoaError.INVALID_PIN, "sólo se permiten dígitos")
         }
         requireRegistered()
+
+        val started = System.nanoTime()
+        val reportsBefore = reportsSent
+
+        if (wakeKeyFirst) {
+            log("wake key (TAB) sent first")
+            pressKey(HidKeycodes.TAB)
+        }
         for (digit in digits) {
             pressKey(HidKeycodes.forDigit(digit))
         }
         pressKey(HidKeycodes.ENTER)
+
+        val stats = SequenceStats(
+            digits = digits.length,
+            reports = reportsSent - reportsBefore,
+            durationMs = (System.nanoTime() - started) / 1_000_000L,
+            wakeKeyFirst = wakeKeyFirst
+        )
+        lastSequenceStats = stats
         log("${digits.length} digit sequence sent")
         log("ENTER sent")
-        return digits.length
+        log("sequence summary: ${stats.summary()}")
+        return stats
     }
 
     /** Tecla suelta de los controles manuales (TAB, BACKSPACE, ENTER). */

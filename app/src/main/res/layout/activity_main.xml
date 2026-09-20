@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootScroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true">
@@ -94,6 +95,22 @@
             android:textStyle="bold" />
 
         <TextView
+            android:id="@+id/tvSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:text="@string/summary_idle"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvAttempts"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="4dp"
+            android:text="@string/attempts_zero"
+            android:textSize="12sp" />
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingTop="8dp"
@@ -110,6 +127,13 @@
             android:inputType="numberPassword"
             android:maxLength="16"
             android:saveEnabled="false" />
+
+        <CheckBox
+            android:id="@+id/cbWakeKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/wake_key_first"
+            android:textSize="12sp" />
 
         <Button
             android:id="@+id/btnSendPin"
@@ -169,11 +193,32 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btnClearLog"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/clear_log" />
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnShareLog"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/share_log" />
+
+            <Button
+                android:id="@+id/btnCopyLog"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/copy_log" />
+
+            <Button
+                android:id="@+id/btnClearLog"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/clear_log" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/tvLog"

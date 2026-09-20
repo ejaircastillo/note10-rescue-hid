@@ -94,6 +94,10 @@ fallido).
 - `HidKeyboardDescriptor` — descriptor de 63 bytes.
 - `HidKeycodes` / `HidKeyboardReports` — mapeo dígito→keycode y reports de 8 bytes.
 - `AoaProtocol` / `AoaError` / `AoaException` — constantes y errores con código.
+- `DiagnosticsReport` — arma el reporte técnico que el usuario comparte o copia
+  (puro, testeable; nunca incluye el PIN).
+- `DeviceSnapshot` + `UsbDeviceManager.describeSnapshots()` / `diffSnapshots()` —
+  comparación del estado del bus USB antes/después de un envío.
 
 ## Seguridad del PIN
 
@@ -101,6 +105,20 @@ fallido).
 permiso de red, `FLAG_SECURE`, el campo se limpia apenas se lee, los logs nunca
 contienen dígitos ni keycodes (`describeSafely` sólo informa mods y cantidad de
 teclas). Botón "ENVIAR PIN UNA VEZ" → una secuencia, luego bloqueo de 10 s.
+
+## Observabilidad (v1.0.2)
+
+- `AoaHidKeyboard.sendPinAndEnter(pin, wakeKeyFirst)` devuelve `SequenceStats`
+  (dígitos, reports, duración, si mandó la tecla de despertar) y deja un resumen de
+  una línea en el registro. Nunca los dígitos ni los keycodes.
+- Monitor del bus USB durante 8 s después del envío (`DeviceSnapshot` +
+  `diffSnapshots`): desconexión / re-enumeración / reaparición. Es el único indicio
+  externo posible del lado del host; no es una confirmación.
+- `DiagnosticsReport` arma el texto que se comparte (versión, host, target,
+  protocolo, estado, intentos de la sesión, último envío, estado USB observado y las
+  últimas 300 líneas). `FLAG_SECURE` se mantiene: el reporte es texto, no captura.
+- Contador de intentos de la sesión, en memoria, que suma sólo con el clic del
+  usuario (Samsung escala desde los 5 intentos fallidos).
 
 ## Build
 
@@ -110,7 +128,7 @@ Detalle del entorno de build y de lo verificado vs. no verificado en `README.md`
 
 ## Estado
 
-v1.0.1: implementado y compilado (`BUILD SUCCESSFUL`) con 45 unit tests en verde,
+v1.0.2: implementado y compilado (`BUILD SUCCESSFUL`) con 57 unit tests en verde,
 descriptor idéntico a scrcpy (0 diferencias byte a byte) y APK sin permisos
 declarados. La verificación end-to-end con los dos teléfonos físicos queda
 pendiente y está listada en la sección "Estado de verificación y limitaciones"

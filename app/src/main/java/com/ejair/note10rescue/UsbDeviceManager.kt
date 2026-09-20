@@ -34,6 +34,15 @@ class UsbDeviceInfo(
     }
 }
 
+/** Foto mínima del estado USB, para comparar antes/después de un envío. */
+data class DeviceSnapshot(
+    val deviceName: String,
+    val vendorId: Int,
+    val productId: Int
+) {
+    fun label(): String = "%s (VID 0x%04X PID 0x%04X)".format(deviceName, vendorId, productId)
+}
+
 /**
  * Enumeración de dispositivos USB, permiso USB (PendingIntent + BroadcastReceiver),
  * attach/detach y apertura de la conexión.
@@ -50,6 +59,47 @@ class UsbDeviceManager(private val context: Context) {
          */
         const val ACTION_USB_PERMISSION = "com.ejair.note10rescue.USB_PERMISSION"
         private const val REQUEST_CODE_PERMISSION = 1001
+
+        /** Descripción legible de una lista de dispositivos (para el registro). */
+        fun describeSnapshots(snapshots: List<DeviceSnapshot>): String =
+            if (snapshots.isEmpty()) {
+                "ningún dispositivo USB enumerado"
+            } else {
+                snapshots.joinToString("; ") { it.label() }
+            }
+
+        /**
+         * Diferencia entre dos fotos del bus USB. Es el único indicio externo que
+         * tenemos del lado del host: cuando un Android se desbloquea suele cambiar
+         * su configuración USB (activar MTP) y re-enumerar.
+         *
+         * Es un **indicio**, no una confirmación: que no haya cambios no significa
+         * que no se haya desbloqueado.
+         */
+        fun diffSnapshots(before: List<DeviceSnapshot>, after: List<DeviceSnapshot>): String {
+            val beforeByName = before.associateBy { it.deviceName }
+            val afterByName = after.associateBy { it.deviceName }
+            val parts = mutableListOf<String>()
+
+            beforeByName.forEach { (name, old) ->
+                val new = afterByName[name]
+                when {
+                    new == null -> parts += "se desconectó $name"
+                    new.productId != old.productId || new.vendorId != old.vendorId ->
+                        parts += "re-enumeró $name (VID/PID 0x%04X:0x%04X -> 0x%04X:0x%04X)".format(
+                            old.vendorId, old.productId, new.vendorId, new.productId
+                        )
+                }
+            }
+            afterByName.forEach { (name, new) ->
+                if (!beforeByName.containsKey(name)) parts += "apareció ${new.label()}"
+            }
+
+            return if (parts.isEmpty()) "sin cambios en el bus USB" else parts.joinToString("; ")
+        }
+
+        fun hasChanges(before: List<DeviceSnapshot>, after: List<DeviceSnapshot>): Boolean =
+            diffSnapshots(before, after) != "sin cambios en el bus USB"
     }
 
     private val usbManager: UsbManager? =
@@ -145,6 +195,14 @@ class UsbDeviceManager(private val context: Context) {
     }
 
     fun hasPermission(device: UsbDevice): Boolean = usbManager?.hasPermission(device) ?: false
+
+    /** Foto del bus USB ahora (para comparar antes/después de un envío). */
+    fun snapshot(): List<DeviceSnapshot> {
+        val manager = usbManager ?: return emptyList()
+        return manager.deviceList.values
+            .map { DeviceSnapshot(it.deviceName, it.vendorId, it.productId) }
+            .sortedBy { it.deviceName }
+    }
 
     /** Pide permiso con PendingIntent + BroadcastReceiver (obligatorio en Android). */
     fun requestPermission(device: UsbDevice) {

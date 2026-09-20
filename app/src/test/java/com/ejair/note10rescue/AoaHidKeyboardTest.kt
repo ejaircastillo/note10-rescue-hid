@@ -208,9 +208,12 @@ class AoaHidKeyboardTest {
         val transport = FakeTransport()
         val keyboard = prepared(transport)
 
-        val sent = keyboard.sendPinAndEnter("12")
+        val stats = keyboard.sendPinAndEnter("12")
 
-        assertEquals(2, sent)
+        assertEquals(2, stats.digits)
+        assertEquals(6, stats.reports)
+        assertFalse(stats.wakeKeyFirst)
+        assertTrue(stats.durationMs >= 0)
         val reports = transport.sentReports()
         // 2 dígitos * (down + release) + ENTER (down + release)
         assertEquals(6, reports.size)
@@ -489,6 +492,60 @@ class AoaHidKeyboardTest {
         assertFalse(logs.any { it.contains("1234") })
         assertFalse(logs.any { it.contains("1e", ignoreCase = true) })
         assertFalse(logs.any { it.contains("1f", ignoreCase = true) })
+        assertTrue(logs.contains("1234").not())
         assertTrue(logs.contains("4 digit sequence sent"))
+    }
+
+    // ------------------------------------------------- visibilidad (v1.0.2)
+
+    @Test
+    fun `la tecla de despertar va antes del PIN y no altera la secuencia`() {
+        val transport = FakeTransport()
+        val keyboard = prepared(transport)
+
+        val stats = keyboard.sendPinAndEnter("12", wakeKeyFirst = true)
+
+        assertEquals(2, stats.digits)
+        // TAB + 2 dígitos + ENTER = 4 pulsaciones = 8 reports
+        assertEquals(8, stats.reports)
+        assertTrue(stats.wakeKeyFirst)
+
+        val reports = transport.sentReports()
+        assertEquals(8, reports.size)
+        assertEquals(HidKeycodes.TAB, reports[0][2].toInt())    // tecla de despertar
+        assertTrue(reports[1].all { it.toInt() == 0 })
+        assertEquals(0x1E, reports[2][2].toInt())               // '1'
+        assertEquals(0x1F, reports[4][2].toInt())               // '2'
+        assertEquals(HidKeycodes.ENTER, reports[6][2].toInt())  // ENTER
+        assertTrue(logs.contains("wake key (TAB) sent first"))
+        assertTrue(logs.any { it.startsWith("sequence summary:") })
+    }
+
+    @Test
+    fun `el resumen de la secuencia no incluye digitos`() {
+        val transport = FakeTransport()
+        val keyboard = prepared(transport)
+
+        val stats = keyboard.sendPinAndEnter("1234")
+        val summary = stats.summary()
+
+        assertTrue(summary.contains("4 dígitos"))
+        assertTrue(summary.contains("10 reports OK"))
+        assertFalse(summary.contains("1234"))
+        assertFalse(summary.contains("1e", ignoreCase = true))
+        assertEquals(stats, keyboard.lastSequenceStats)
+    }
+
+    @Test
+    fun `el contador de reports acumula entre secuencias`() {
+        val transport = FakeTransport()
+        val keyboard = prepared(transport)
+
+        val first = keyboard.sendPinAndEnter("1")
+        val second = keyboard.sendPinAndEnter("1")
+
+        assertEquals(4, first.reports)
+        assertEquals(4, second.reports)
+        assertTrue(second.durationMs >= 0)
     }
 }

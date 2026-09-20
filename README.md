@@ -60,20 +60,74 @@ El campo PIN se limpia al enviar y no se guarda en ningún lado. Los controles
 TAB / BACKSPACE / ENTER y **Desregistrar HID** están detrás de "Mostrar controles
 manuales" y nunca se usan solos.
 
+## Cómo maximizar que el PIN entre (y cómo saber si entró)
+
+AOA-HID es un canal de **una sola dirección**: la app puede ver que los reports
+salieron (el registro muestra `result=8` en cada `SEND_HID_EVENT`), pero Android
+**no devuelve ninguna confirmación** de desbloqueo. Ese canal no existe.
+
+Procedimiento recomendado:
+
+1. Despertá el Note10 con el **botón lateral** (físico).
+2. En la app, marcá **"Enviar TAB antes del PIN"**.
+3. Escribí el PIN y tocá **ENVIAR PIN UNA VEZ**.
+4. Esperá **3-5 s** antes de concluir nada (el primer desbloqueo tras un reinicio
+   tarda por el desencriptado).
+
+**Por qué la TAB previa**: Android suele **consumir el primer evento de teclado**
+para despertar la pantalla. Si la pantalla estaba apagada, el PIN entra *corrido*
+(sin el primer dígito) y falla sin dejar ningún error en el registro. Si el TAB no
+era necesario, no molesta: en la pantalla de PIN no hace nada.
+
+Indicios de que entró (ninguno es confirmación dura):
+
+- **Vibración**: tené el Note10 en la mano al enviar. PIN incorrecto → aviso corto
+  de fallo; correcto → desbloqueo.
+- **Monitor USB**: la app mira el bus USB durante 8 s después del envío y registra
+  `CAMBIO USB: re-enumeró ... (VID/PID 0x... -> 0x...)` si el Note10 cambia de
+  configuración, que es lo típico al desbloquearse (activa MTP). Que diga
+  `sin cambios en el bus USB` **no** prueba que no se haya desbloqueado.
+- **Prueba MTP**: desenchufá el Note10 y conectalo a una PC. Android sólo expone el
+  almacenamiento con el equipo desbloqueado: si aparece "Almacenamiento interno",
+  se desbloqueó.
+
+## Reportar un problema
+
+Dos botones abajo del registro:
+
+- **Compartir registro**: arma un reporte con la versión de la app, el modelo y la
+  versión de Android del host, el dispositivo elegido (VID/PID), el protocolo
+  informado, el estado, los intentos de la sesión, el resumen del último envío, el
+  estado USB observado y las últimas 300 líneas del registro. Lo manda por el menú
+  de compartir (mail, mensajería, Drive…) — sin permisos y sin que la app use
+  internet.
+- **Copiar**: lo mismo, al portapapeles.
+
+El registro **nunca** contiene el PIN ni los keycodes de los dígitos: sólo
+cantidades (`6 dígitos`, `14 reports OK`) y metadatos técnicos de cada transfer
+(request, result, duración). `FLAG_SECURE` sigue activo (no se pueden tomar
+capturas): por eso el reporte se comparte como texto.
+
+La app también muestra **"Intentos enviados en esta sesión: N"**, que suma sólo
+cuando vos tocás el botón, y avisa a partir de 5 (Samsung empieza a demorar; con
+"Restablecer de fábrica automático" activo, a los 15 intentos se borra solo). El
+contador vive en memoria: se reinicia cuando cerrás la app, no guarda nada.
+
 ## Estado de verificación y limitaciones
 
 Verificado en este repositorio (salida de herramientas, no estimaciones):
 
 - `./gradlew clean test assembleDebug` → **BUILD SUCCESSFUL**.
-- **45 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
-  `AoaHidKeyboardTest` 28, `HidKeyboardReportsTest` 10, `HidKeycodesTest` 7.
+- **57 unit tests, 0 fallas** (por variante: la tarea `test` corre debug y release):
+  `AoaHidKeyboardTest` 31, `HidKeyboardReportsTest` 10, `HidKeycodesTest` 7,
+  `UsbBusStateTest` 6, `DiagnosticsReportTest` 3.
 - Descriptor HID comparado byte a byte contra `scrcpy/app/src/hid/hid_keyboard.c`
   con las macros resueltas: **63 bytes, 0 diferencias**.
 - APK inspeccionado con `aapt2 dump badging` / `dump permissions`: paquete
-  `com.ejair.note10rescue`, `versionCode 2`, `versionName 1.0.1`, `minSdk 24`,
+  `com.ejair.note10rescue`, `versionCode 3`, `versionName 1.0.2`, `minSdk 24`,
   `targetSdk 34`, `uses-feature usb.host`, **cero permisos declarados** (sin `INTERNET`).
-- `sha256` del APK publicado (v1.0.1):
-  `3f5ca6758ab383b166a7bdb5a75faeb81b4d8d6626f1390a2a58ab47b9670476`.
+- `sha256` del APK publicado (v1.0.2):
+  `e5ad710ae669c88394c8b3652ab07cba78049181e5594b9b2639b2297795825e`.
 
 **No verificado** (requiere los dos teléfonos físicos, que no están disponibles
 para quien escribió este código):
@@ -99,6 +153,7 @@ Otras limitaciones conocidas:
 
 ```
 NOTE10 RESCUE HID
+v1.0.2                            <- versión en el registro
 
 USB
 [ Detectar dispositivos ]        <- enumera y lista en radio buttons
@@ -108,16 +163,20 @@ AOA protocol: 2                  <- versión informada por el Note10
 [x] Intentar HID igualmente si GET_PROTOCOL falla o responde < 2 (un solo intento)
 [ Preparar HID (registrar teclado) ]
 ● HID preparado                  <- estado ("(modo forzado)" si se usó el fallback)
+Último envío: 6 dígitos, 14 reports OK, 1240ms       <- resumen en una línea
+Intentos enviados en esta sesión: 1                  <- contador manual + aviso
 
 PIN NUMÉRICO
 [ •••••••• ]                     <- numberPassword, se limpia al enviar
+[x] Enviar TAB antes del PIN     <- para el caso "se comió la primera tecla"
 [ ENVIAR PIN UNA VEZ ]           <- se bloquea 10 s y muestra "Bloqueado N s…"
 
 [ Mostrar controles manuales ]   <- despliega el panel
    [ Enviar TAB ] [ Enviar BACKSPACE ] [ Enviar ENTER ] [ Desregistrar HID ]
 
-REGISTRO TÉCNICO                 <- nunca muestra el PIN
-[ Limpiar registro ]
+REGISTRO TÉCNICO                 <- nunca muestra el PIN, y hace auto-scroll
+[ Compartir registro ] [ Copiar ] [ Limpiar registro ]
+00:00:00  Note10 Rescue HID v1.0.2 — todo lo que pasa queda en este registro
 00:00:00  USB device detected: 1
 00:00:00  USB permission granted
 00:00:00  Connection opened
@@ -125,7 +184,12 @@ REGISTRO TÉCNICO                 <- nunca muestra el PIN
 00:00:00  REGISTER_HID: OK
 00:00:00  SET_HID_REPORT_DESC: OK
 00:00:00  HID READY
-00:00:00  6 dígitos enviados
+00:00:00  wake key (TAB) sent first
+00:00:00  6 digit sequence sent
+00:00:00  ENTER sent
+00:00:00  sequence summary: 6 dígitos, 14 reports OK, 1240ms
+00:00:00  Monitor USB: /dev/bus/usb/001/002 (VID 0x04E8 PID 0x6860)
+00:00:08  Monitor USB: fin de la ventana de 8s
 ```
 
 Estados posibles: `● HID no preparado`, `● Trabajando…`, `● HID preparado`,
@@ -206,6 +270,7 @@ app/src/main/java/com/ejair/note10rescue/
   HidKeyboardDescriptor.kt descriptor HID de 63 bytes (portado de scrcpy)
   HidKeycodes.kt           dígito -> HID usage id + etiquetas seguras de log
   HidKeyboardReports.kt    reports de 8 bytes (down / release / ENTER)
+  DiagnosticsReport.kt     arma el reporte compartible (nunca incluye el PIN)
   AoaProtocol.kt           51/54/55/56/57 y bmRequestType 0x40 / 0xC0
   AoaError.kt             códigos de error + AoaException
   ControlTransport.kt     interfaz de transporte (inyectable en tests)
@@ -214,25 +279,29 @@ app/src/test/java/com/ejair/note10rescue/
   AoaHidKeyboardTest.kt    protocolo: LE, orden, fallback, errores, PIN
   HidKeyboardReportsTest.kt reports y descriptor
   HidKeycodesTest.kt       mapeo dígito -> keycode
+  UsbBusStateTest.kt       comparación de estado del bus USB
+  DiagnosticsReportTest.kt el reporte compartible no filtra el PIN
 ```
 
 ## APK
 
-`dist/note10-rescue-hid-1.0.1-debug.apk` — APK debug de v1.0.1, compilado y verificado
-(`BUILD SUCCESSFUL`, 45 unit tests en verde, descriptor idéntico a scrcpy, sin ningún
-permiso declarado). 866.003 bytes.
+`dist/note10-rescue-hid-1.0.2-debug.apk` — APK debug de v1.0.2, compilado y verificado
+(`BUILD SUCCESSFUL`, 57 unit tests en verde, descriptor idéntico a scrcpy, sin ningún
+permiso declarado). 877.127 bytes.
 
 ```
-sha256  3f5ca6758ab383b166a7bdb5a75faeb81b4d8d6626f1390a2a58ab47b9670476
+sha256  e5ad710ae669c88394c8b3652ab07cba78049181e5594b9b2639b2297795825e
 ```
 
-El APK de v1.0.0 (`dist/note10-rescue-hid-1.0-debug.apk`) queda publicado sin cambios
-para trazabilidad.
+Los APK de v1.0.1 (`dist/note10-rescue-hid-1.0.1-debug.apk`) y v1.0.0
+(`dist/note10-rescue-hid-1.0-debug.apk`) quedan publicados sin cambios para
+trazabilidad. Al estar firmados con la misma clave de debug, la actualización se
+instala encima sin desinstalar.
 
 Instalación desde una PC con ADB:
 
 ```bash
-adb install -r dist/note10-rescue-hid-1.0.1-debug.apk
+adb install -r dist/note10-rescue-hid-1.0.2-debug.apk
 ```
 
 ## Build
@@ -253,6 +322,28 @@ Los resultados de los tests quedan en `app/build/test-results/testDebugUnitTest/
 `app/build/reports/tests/testDebugUnitTest/index.html`.
 
 ## Cambios
+
+### v1.0.2
+
+Sólo observabilidad y ayudas manuales; la función, la arquitectura y los permisos
+son los mismos.
+
+- **"Compartir registro"** y **"Copiar"**: exportan un reporte con contexto
+  (versión, host, dispositivo, protocolo, estado, intentos, resumen del último
+  envío) + las últimas 300 líneas del registro. Sin permisos, sin internet.
+   `FLAG_SECURE` sigue activo, por eso el reporte es texto y no captura.
+- **Auto-scroll** del registro: siempre queda a la vista lo último que pasó.
+- **Resumen del último envío en una línea**: `6 dígitos, 14 reports OK, 1240ms`.
+- **Monitor del bus USB 8 s después del envío**: registra si el Note10 se
+  desconecta, re-enumera o reaparece (indicio de cambio de estado; no es
+  confirmación).
+- **Contador de intentos de la sesión** con aviso a partir de 5 (Samsung demora;
+  15 con auto-reset borra el equipo). Sólo suma con tu clic, vive en memoria.
+- **Casilla "Enviar TAB antes del PIN"**: opt-in, de un solo disparo, para el caso
+  conocido en que Android consume el primer evento de teclado al despertar la
+  pantalla y el PIN entraría corrido.
+- 12 tests nuevos (57 en total): comparación de estado USB, reporte sin PIN,
+  tecla de despertar y resumen de secuencia.
 
 ### v1.0.1
 

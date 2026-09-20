@@ -42,4 +42,18 @@
     <string name="msg_pin_digits_only">El PIN sólo puede tener dígitos (0-9).</string>
     <string name="msg_pin_too_long">PIN demasiado largo.</string>
     <string name="msg_hid_not_prepared">Prepará el HID antes de enviar teclas.</string>
+
+    <string name="summary_idle">Último envío: —</string>
+    <string name="summary_fmt">Último envío: %1$s</string>
+    <string name="attempts_zero">Intentos enviados en esta sesión: 0</string>
+    <string name="attempts_count">Intentos enviados en esta sesión: %1$d</string>
+    <string name="attempts_warning">⚠ A partir de 5 intentos fallidos el Note10 empieza a demorar el desbloqueo. Con "Restablecer de fábrica automático" activo, a los 15 intentos se borra solo.</string>
+    <string name="wake_key_first">Enviar TAB antes del PIN (por si la pantalla estaba apagada y Android se comió la primera tecla)</string>
+    <string name="share_log">Compartir registro</string>
+    <string name="copy_log">Copiar</string>
+    <string name="share_log_subject">Note10 Rescue HID — registro técnico</string>
+    <string name="share_log_chooser">Compartir registro técnico</string>
+    <string name="log_copied">Registro copiado al portapapeles (no contiene el PIN).</string>
+    <string name="log_share_failed">No se pudo abrir el menú de compartir.</string>
+    <string name="log_clipboard_unavailable">Portapapeles no disponible.</string>
 </resources>
